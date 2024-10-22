@@ -1,0 +1,55 @@
+\documentclass[]{article}
+
+\usepackage{amsmath}
+
+%opening
+\title{}
+\author{}
+
+\begin{document}
+
+\maketitle
+
+\section{Analytic equation}
+
+We start with the the micro-macro decomposition considered in \cite{JaLiQiXi2014} which is given by
+\begin{subequations}
+\begin{align}
+& \partial_t \rho + \partial_x \langle v g \rangle = 0 \label{eq: mmeq1} \\
+& \partial_t g + \frac{1}{\epsilon} (\mathbf{I} - \Pi) (v \partial_x g) + \frac{1}{\epsilon^2} v \partial_x \rho= \frac{1}{\epsilon^3} \mathcal{C}(\rho + \epsilon g) \label{eq: mmeq2}
+\end{align}
+\end{subequations}
+
+Writing $g = (\alpha, \beta)$ we can expand the second line \eqref{eq: mmeq2} into
+\begin{align*}
+\partial_t \alpha + \frac{1}{2 \epsilon} \partial_x (\alpha + \beta)+ \frac{1}{\epsilon^2} \partial_x \rho = & \frac{1}{\epsilon^3} \mathcal{C}(\rho + \epsilon \alpha)\\
+\partial_t \beta - \frac{1}{2\epsilon} \partial_x (\alpha + \beta)- \frac{1}{\epsilon^2} \partial_x \rho = & \frac{1}{\epsilon^3} \mathcal{C}(\rho + \epsilon \beta)
+\end{align*}
+Here we used that
+\[
+\Pi (v \partial_x g) = \frac{1}{2}(\alpha - \beta)
+\]
+Setting $j = \frac{1}{2}(\alpha - \beta)$ and subtracting the second line from the first we get
+\[
+2 \partial_t j + \frac{1}{\epsilon} \partial_x (\alpha + \beta) + \frac{2}{\epsilon^2} \partial_x \rho = \frac{1}{\epsilon^3} (\mathcal{C}(\rho + \epsilon \alpha) - \mathcal{C}(\rho + \epsilon \beta)) 
+\]
+Using $\alpha = -\beta$ due to $\langle g \rangle = 0$ and dividing by $2$ we recover the telegraph equation
+\begin{align*}
+& \partial_t \rho + \partial_x j = 0\\
+& \partial_t j + \frac{1}{\epsilon^2} \partial_x \rho = \frac{1}{\epsilon^3} (\mathcal{C}(\rho + \epsilon \alpha) - \mathcal{C}(\rho + \epsilon \beta)) 
+\end{align*}
+
+\begin{thebibliography}{9}
+	\bibitem{JaLiQiXi2014}
+	Juhi Jang, Fengyan Li, Jing-Mei Qiu, Tao Xiong,
+	High order asymptotic preserving DG-IMEX schemes for discrete-velocity kinetic equations in a diffusive scaling,
+	Journal of Computational Physics,
+	Volume 281,
+	2015,
+	Pages 199-224,
+	ISSN 0021-9991,
+	https://doi.org/10.1016/j.jcp.2014.10.025.
+	(https://www.sciencedirect.com/science/article/pii/S0021999114007074)
+\end{thebibliography}
+
+\end{document}
