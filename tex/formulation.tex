@@ -2,6 +2,7 @@
 
 \usepackage{amsmath}
 \usepackage{stmaryrd}
+\usepackage{cases}
 
 %opening
 \title{}
@@ -65,21 +66,62 @@ s_h(\rho_h, g_h, \psi_h, v) = & - \frac{1}{\epsilon^2}s_h^1(\rho_h, g_h, \psi_h,
 
 where the definitions of $s_h^1(\rho_h, g_h, \psi_h, v)$ and $s_h^2(g_h, \psi_h, v)$ depend on the choice of the collision operator.
 
+	\begin{align*}
+		s_h^1(\rho_h, g_h, \psi_h, v) = \begin{cases}
+			(K \rho_h^m g_h, \psi) \\
+			(g_h - A \nu \rho_h, \psi_h) \\
+			(g_h - C \nu \rho_h^2, \psi_h)
+		\end{cases}
+		\quad
+		s_h^2(g_h, \psi_h, v) = \begin{cases}
+			0 \\
+			0 \\
+			(C v g_h^2, \psi_h)
+		\end{cases}
+	\end{align*}
+
 \subsection{Time discretization}
 
 A first order IMEX discretization is given by
 
 \begin{subequations}
 \begin{align}
-& \frac{1}{\Delta t} (\rho_h^{n+1} - \rho_h^n, \phi_h) + a_h(g_h, \phi_h) = 0 \label{eq: time dist 1}\\
-& \frac{1}{\Delta t} (g_h^{n+1} - g_h^n, \psi_h) + \frac{1}{\epsilon} b_h(g_h^n, \psi_h, v) + \frac{v}{\epsilon^2} c_h(\rho_h^{n+1}, \psi_h) = - \frac{1}{\epsilon^2}s_h^1(\rho_h^{n+1}, g_h^{n+1}, \psi_h, v) - s_h^2(g_h^n, \psi_h, v) \label{eq: time dist 2}
+\label{eq: first order imex scheme 1}  \frac{1}{\Delta t} (\rho_h^{n+1} - \rho_h^n, \phi_h) + a_h(g_h, \phi_h) & = 0 \\
+\label{eq: first order imex scheme 2} \frac{1}{\Delta t} (g_h^{n+1} - g_h^n, \psi_h) + \frac{1}{\epsilon} b_h(g_h^n, \psi_h, v) + \frac{v}{\epsilon^2} c_h(\rho_h^{n+1}, \psi_h) & = - \frac{1}{\epsilon^2}s_h^1(\rho_h^{n+1}, g_h^{n+1}, \psi_h, v) - s_h^2(g_h^n, \psi_h, v)
 \end{align}
 \end{subequations}
-From this we can already read off that $a_h$ in \eqref{eq: time dist 1} will probably need a DoD stabilization since the equation is handled purely explicitly. We might also expect that $b_h$ in \eqref{eq: time dist 2} will need a DoD stabilization to prevent a blowup of the RHS. On the other hand $c_h$ in \eqref{eq: time dist 2} should require no DoD stabilization since it is handled implicitly.
+From this we can already read off that $a_h$ in \eqref{eq: first order imex scheme 1} will probably need a DoD stabilization since the equation is handled purely explicitly. We might also expect that $b_h$ in \eqref{eq: first order imex scheme 2} will need a DoD stabilization to prevent a blowup of the RHS. On the other hand $c_h$ in \eqref{eq: first order imex scheme 2} should require no DoD stabilization since it is handled implicitly.
 
 We further note that $b_h$ will have no impact on asymptotic stability, at least formally, since it vanishes in the (formal) limit. This should perhaps be checked rigorously, though.
 
-\section*{Stability analysis}
+\section{Stability analysis}
+
+\subsection{Asymptotic stability}
+
+We start by taking the formal limit $\epsilon \to 0$ in \eqref{eq: first order imex scheme 2}. This gives
+\[
+v c_h (\rho_h^{n+1}, \psi_h) = - s_h^1 (\rho_h^{n+1}, g_h^{n+1}, \psi_h, v)
+\]
+For simplicity we only cosider the case
+\[
+s_h^1(\rho_h, g_h, \psi_h, v) = (g_h, \psi_h), \quad s_h^2(g_h, \psi_h, v) = 0
+\]
+Multiplying \eqref{eq: first order imex scheme 2} by $v$ and applying the $\langle \cdot \rangle$ operation we get
+\[
+c_h(\rho_h^{n+1}, \psi_h) = (\langle vg_h \rangle, \psi_h)
+\]
+Together with \eqref{eq: first order imex scheme 1} we arrive at the scheme
+\begin{align*}
+	\frac{1}{\Delta t} (\rho_h^{n+1} - \rho_h^n, \phi_h) - \sum_i \int_{E_i} \langle v g_h \rangle \partial_x \phi_h - \sum_{i} \widehat{\langle v g \rangle} \llbracket \phi_h \rrbracket_{i-\frac{1}{2}} & = 0\\
+	- \sum_i \int_{E_i} \rho_h \partial_x \psi_h - \sum_i \widehat{ \rho_h} \llbracket \psi_h \rrbracket_{i - \frac{1}{2}}  & = (\langle vg_h \rangle, \psi_h)
+\end{align*}
+
+This should be a scheme for the heat equation with a mixed formulation for the laplacian, i. e.
+\begin{align*}
+\partial_t \rho + \partial_x \sigma & = 0 \\
+\sigma & = \partial_x \rho
+\end{align*}
+with $\sigma := \langle v \rho \rangle$.
 
 \begin{thebibliography}{9}
 	\bibitem{JaLiQiXi2014}
