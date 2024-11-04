@@ -45,6 +45,24 @@ Using $\alpha = -\beta$ due to $\langle g \rangle = 0$ and dividing by $2$ we re
 
 \subsection{Space discretization}
 
+\subsubsection{Cut cell grid}
+
+Our spatial domain discretizations starts off with $N+1$ equidistant grid points $(x_{i - \frac{1}{2}})_{(1 \le i \le N + 1)}$ on the domain $(a, b)$ forming a grid with $N$ elements  $E_i = (x_{i - \frac{1}{2}}, x_{i + \frac{1}{2}})$ of size $|E_i| = h_i = x_{i + \frac{i}{2}} - x_{i - \frac{1}{2}}$.
+
+Let for some $1 \le k \le N$ a point $x_{cut} \in E_k$  be given, seperating $E_k$ into two cut cells $E_{cut, 1} = (x_{k - \frac{1}{2}}, x_{cut})$ and $E_{cut, 2} = (x_{cut}, x_{k + \frac{1}{2}})$.  This yields the cut cell grid
+\[
+\mathcal{M}_h = \{ E_i : i \neq k\} \cup \{ E_{cut, 1}, E_{cut, 2} \}.
+\]
+We will assume that $E_{cut}^1$ is the small cell with $|E_i| \ll h$, requiring additional handling if a timestep size depending on $h$ is chosen.
+
+We define our discrete function space as
+\[
+V_h = \{ v_h \in L^2((a, b)) : (v_h)_{|E} \in \mathcal{P}^k(E), \; E \in \mathcal{M}_h \}
+\]
+that means our discrete functions are piecewise polynomials on the cut cell grid.
+
+\subsubsection{Base scheme}
+
 The semi-discretization in space can be written as
 
 \begin{subequations}
@@ -57,9 +75,9 @@ The semi-discretization in space can be written as
 with
 \begin{subequations}
 \begin{align}
-a_h(g_h, \phi_h) = & - \sum_i \int_{E_i} \langle v g_h \rangle \partial_x \phi_h - \sum_{i} \widehat{\langle v g \rangle} \llbracket \phi_h \rrbracket_{i-\frac{1}{2}} \\
-b_h(g_h, \psi_h, v) = & - \sum_i \int_{E_i} v g_h \partial_x \psi_h - \sum_i \widetilde{v g_h} \llbracket \psi_h \rrbracket_{i - \frac{1}{2}}\\
-c_h(\rho_h, \psi_h) = & - \sum_i \int_{E_i} \rho_h \partial_x \psi_h - \sum_i \widehat{ \rho_h} \llbracket \psi_h \rrbracket_{i - \frac{1}{2}} \\
+a_h(g_h, \phi_h) = & - \sum_{E \in \mathcal{M}_h} \int_{E} \langle v g_h \rangle \partial_x \phi_h - \sum_{i} \widehat{\langle v g \rangle} \llbracket \phi_h \rrbracket_{x_{i - \frac{1}{2}}} - \widehat{\langle v g \rangle} \llbracket \phi_h \rrbracket_{x_{cut}}\\
+b_h(g_h, \psi_h, v) = & - \sum_{E \in \mathcal{M}_h} \int_{E} v g_h \partial_x \psi_h - \sum_i \widetilde{v g_h} \llbracket \psi_h \rrbracket_{x_{i - \frac{1}{2}}} - \widetilde{v g_h} \llbracket \psi_h \rrbracket_{x_{cut}}\\
+c_h(\rho_h, \psi_h) = & - \sum_{E \in \mathcal{M}_h}\int_{E} \rho_h \partial_x \psi_h - \sum_i \widehat{ \rho_h} \llbracket \psi_h \rrbracket_{x_{i - \frac{1}{2}}} - \widehat{ \rho_h} \llbracket \psi_h \rrbracket_{x_{cut}}\\
 s_h(\rho_h, g_h, \psi_h, v) = & - \frac{1}{\epsilon^2}s_h^1(\rho_h, g_h, \psi_h, v) - s_h^2(g_h, \psi_h, v)
 \end{align}
 \end{subequations}
