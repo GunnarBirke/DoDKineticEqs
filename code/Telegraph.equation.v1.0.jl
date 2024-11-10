@@ -17,7 +17,7 @@ using Plots: Plots, plot, plot!, savefig
 # more details in: https://epubs.siam.org/doi/abs/10.1137/07069479X
 
 function u1_func(x)
-    if x >= -0.2 && x <= 0.2
+    if x >= -0.20 && x <= 0.20
         rho = 1.0
     else
         rho = 0.0
@@ -45,10 +45,10 @@ D1 = periodic_derivative_operator(derivative_order=1, accuracy_order=4,
                                   xmin=x_min, xmax=x_max, N=N)
 
 u0 = zeros(1:2*N);
-u0[1:N] = u1_func.(grid(D1));
-u0[N+1:2*N] = u2_func.(grid(D1));
+u0[1:N] = u1_func.(SummationByPartsOperators.grid(D1));
+u0[N+1:2*N] = u2_func.(SummationByPartsOperators.grid(D1));
 params = (D1=D1, ε=1.0);
 
-
+tsteps = 50;
 prob = ODEProblem(telegraph!, u0, tspan);
-sol = solve(prob, Kvaerno3(), saveat=range(first(tspan), stop=last(tspan), length=5));
+sol = solve(prob, Kvaerno3(), saveat=range(first(tspan), stop=last(tspan), length=tsteps));
