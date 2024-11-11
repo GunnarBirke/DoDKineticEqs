@@ -1,0 +1,35 @@
+\subsection{Julia Implementation}
+We want to implement the telegraph equation. 
+Therefore, we have $b_h=0$ and with $K=1, m=0$ $s_h=-\frac{1}{\epsilon^2}(g_h,\psi_h)$.\\
+%Remind also, that with $g=(\alpha, \beta)$ and $\langle g\rangle=0$, we have $\alpha = -\beta$ and therefore
+%$$j(x,t)=\frac{1}{2\epsilon}\left(f(x,v=1,t)-f(x,v=-1,t)\right)=\frac{1}{2\epsilon}\left(\rho+\epsilon\alpha-\rho-\epsilon\beta\right)=\frac{1}{\epsilon}\alpha$$.
+So we end up with the semidiscretization 
+\begin{align*}
+(\partial_t\rho_h, \phi_h)&=\sum\limits_i \int_{E_i} \langle j_h \rangle \partial_x \phi_h + \sum_{i} \widehat{\langle j \rangle} \llbracket \phi_h \rrbracket_{i-\frac{1}{2}}\\
+(\partial_t j_h, \psi_h)&= \frac{1}{\epsilon^2}\sum_i \int_{E_i} \rho_h \partial_x \psi_h + \sum_i \widehat{ \rho_h} \llbracket \psi_h \rrbracket_{i - \frac{1}{2}} + \left(j_h, \psi_h\right),
+\end{align*}
+which translates into the matrix-formulation
+\begin{equation*}
+    \begin{pmatrix}
+        SM \rho' \\
+        SM j'
+    \end{pmatrix} =
+    \begin{pmatrix}
+        -Bj^*+D^TMj \\
+        \frac{1}{\epsilon^2}\left(-B\rho^*+D^TM\rho + Mj\right)
+    \end{pmatrix}
+\end{equation*}
+with SBP operators $D, M$ and flux operator $B$ (or $V^TBV$). Further, $S$ is the scaling matrix $S=diag(\Delta x_1/2, \Delta x_2/2, \hdots, \Delta x_N/2)$ and $\rho^*, j^*$ are the boundary values.\\
+To treat the flux terms
+\begin{equation*}
+\begin{pmatrix}
+    Bj^* \\
+    B\rho^*
+\end{pmatrix}
+\end{equation*}
+one coud consider the choices of the paper \cite{JaLiQiXi2014}, which alternate the directions. But what is about the splitting
+
+\begin{equation*}
+A^*\left(\begin{pmatrix} \rho_{i-1}\\j_{i-1} \end{pmatrix} - \begin{pmatrix} \rho_i\\ j_i\end{pmatrix} \right) \begin{pmatrix} \phi_h^-\\ \psi_h^-\end{pmatrix} 
++ A^- \left(\begin{pmatrix} \rho_{i-1}\\j_{i-1} \end{pmatrix} - \begin{pmatrix} \rho_i\\ j_i \end{pmatrix} \right) \begin{pmatrix} \phi_h^+\\ \psi_h^+\end{pmatrix} ?
+\end{equation*}
