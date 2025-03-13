@@ -1,7 +1,7 @@
 function setup_problem_eq(init_cond, xmin, xmax, cellnumber; Tmax = 1, a = 1, CFL = 0.9, bcs = "periodic", epsilon = 1.0)
     vertices = Array(range(xmin, xmax, length = cellnumber + 1))
     h = vertices[2]-vertices[1]
-    t_d = range(0,Tmax, length = Integer(round(Tmax/(CFL*h/a))))
+    t_d = range(0,Tmax, length = Integer(round(abs(Tmax/(CFL*h/a)))))
     # Setting initial condition as function
     random_ic = zeros(3*cellnumber)
     if init_cond == "random"
@@ -26,12 +26,15 @@ function setup_problem_eq(init_cond, xmin, xmax, cellnumber; Tmax = 1, a = 1, CF
             else
                 return 1.0
             end
-        elseif init_cond == "plateu"
+        elseif init_cond == "plateau"
             if x >= 0.45 && x <= 0.55
                 rho = 1.0
             else
                 rho = 0.0
             end
+        elseif init_cond == "telsin"
+            r = -2/(1+sqrt(1-4*epsilon^2))
+            return 1/r*sin(x)
         elseif init_cond == "random"
             return random_ic[ceil(Int, abs(x/(xmax-xmin))*cellnumber)+1]
         end
@@ -64,14 +67,26 @@ function to_periodic(x)
 end
 
 function get_exact_solution(setup)
+    eq_type = setup["eq_type"]
     u0_eval = setup["u0_eval"]
     x_d = setup["x_d"]
     a = setup["a"]
     t_d = setup["t_d"]
+    N = setup["cellnumber"]
+    deg = setup["deg"]
+    epsilon = setup["epsilon"]
     if setup["bcs"] == "periodic"
-        return u_exact = [u0_eval(to_periodic(x-(a*(t)))) for x in x_d, t in t_d]
-    elseif setup["bcs"] == "dirichlet"
-        return u_exact = [u0_eval(x-(a*(t))) for x in x_d, t in t_d]
+        #return u_exact = [u0_eval(to_periodic(x-(a*(t)))) for x in x_d, t in t_d]
+        if eq_type == "wave"
+            u_wave_exact = zeros((deg+1)*2*N, length(t_d));
+            u_wave_exact[1:(deg+1)*N, :] = [1/2*(sin(2*pi*(x-1/epsilon*t))+epsilon*cos(2*pi*(x-1/epsilon*t))+sin(2*pi*(x+1/epsilon*t))-epsilon*cos(2*pi*(x+1/epsilon*t))) for x in x_d, t in t_d];
+            u_wave_exact[(deg+1)*N+1:(deg+1)*2*N, :] = [1/2*(1/epsilon*sin(2*pi*(x-1/epsilon*t))+cos(2*pi*(x-1/epsilon*t))-1/epsilon*sin(2*pi*(x+1/epsilon*t))+cos(2*pi*(x+1/epsilon*t))) for x in x_d, t in t_d];
+            return u_wave_exact
+        elseif eq_type == "telegraph"
+            println("not implemented yet")
+        else 
+            println("wrong eq type")
+        end
     end
 end
 
@@ -82,7 +97,8 @@ function f_RHS(u, t, RHS_mat, setup)
     basis = setup["basis"]
     deg = setup["deg"]
     v = setup["v"]
-    Nx = length(x_d)
+    # Nx = length(x_d)*2, because wave/telegraph is a 2-dim system of equations
+    Nx = length(x_d)*2
     g_L = zeros(Nx)
     basis1 = basis
     for j in 1:deg+1
@@ -132,6 +148,72 @@ function include_cut_cell(setup, cutcell_size, cutcell_pos)
     return setup
 end
 
+
+function SSPRK3(setup, RHS_mat)
+    x_d = setup["x_d"]
+    a = setup["a"]
+    u0 = setup["u0"]
+    t_d = setup["t_d"]
+    u_exact = get_exact_solution(setup)
+    Nt = length(t_d)
+    # Nx = length(x_d)*2, because wave/telegraph is a 2-dim system of equations
+    Nx = length(x_d)*2
+    u_sol = zeros(Nx, Nt)
+    substeps = zeros(Nx, 3)
+    f(u,t) = f_RHS(u,t, RHS_mat, setup)
+    cRK = [0, 1, 1/2]
+    for it in range(1,Nt, step = 1)
+        if it == 1
+            u_sol[:,it] = u0[1:Nx]
+        else
+            dt = (t_d[it]-t_d[it-1])
+            substeps[:, 1] = f(u_sol[:,it - 1],t_d[it - 1] + cRK[1]*dt)
+            substeps[:, 2] = f(u_sol[:,it - 1] + dt * (substeps[:, 1]), t_d[it - 1] + cRK[2]*dt)
+            substeps[:, 3] = f(u_sol[:,it - 1] + dt * 1/4*(substeps[:, 1] + substeps[:, 2]), t_d[it - 1] + cRK[3]*dt)
+            u_sol[:,it] = u_sol[:,it - 1] + dt * (1/6*substeps[:, 1] + 1/6*substeps[:, 2] + 2/3 * substeps[:, 3])
+        end
+    end
+    return u_sol, u_exact
+end
+
+function SSPRK10_4(setup, RHS_mat)
+    x_d = setup["x_d"]
+    a = setup["a"]
+    u0 = setup["u0"]
+    t_d = setup["t_d"]
+    u_exact = get_exact_solution(setup)
+    Nt = length(t_d)
+    Nx = length(x_d)*2
+    u_sol = zeros(Nx, Nt)
+    substeps = zeros(Nx, 10)
+    f(u,t) = f_RHS(u,t, RHS_mat, setup)
+    cRK = [0, 1/6, 1/3, 1/2, 2/3, 1/3, 1/2, 2/3, 5/6, 1]
+    for it in range(1,Nt, step = 1)
+        if it == 1
+            u_sol[:,it] = u0[1:Nx]
+        else
+            dt = (t_d[it]-t_d[it-1])
+            substeps[:, 1] = f(u_sol[:,it - 1], t_d[it - 1] + cRK[1]*dt)
+            substeps[:, 2] = f(u_sol[:,it - 1] + dt * 1/6*(substeps[:, 1]), t_d[it - 1] + cRK[2]*dt)
+            substeps[:, 3] = f(u_sol[:,it - 1] + dt * 1/6*(substeps[:, 1] + substeps[:, 2]), t_d[it - 1] + cRK[3]*dt)
+            substeps[:, 4] = f(u_sol[:,it - 1] + dt * 1/6*(substeps[:, 1] + substeps[:, 2] + substeps[:, 3]), t_d[it - 1] + cRK[4]*dt)
+            substeps[:, 5] = f(u_sol[:,it - 1] + dt * 1/6*(substeps[:, 1] + substeps[:, 2] + substeps[:, 3] + substeps[:, 4]), t_d[it - 1] + cRK[5]*dt)
+            mid_sum15 = 1/15*(substeps[:, 1] + substeps[:, 2] + substeps[:, 3] + substeps[:, 4] + substeps[:, 5])
+            substeps[:, 6] = f(u_sol[:,it - 1] + dt * mid_sum15, t_d[it - 1] + cRK[6]*dt)
+            substeps[:, 7] = f(u_sol[:,it - 1] + dt * (mid_sum15 + 1/6*(substeps[:, 6])), t_d[it - 1] + cRK[7]*dt)
+            substeps[:, 8] = f(u_sol[:,it - 1] + dt * (mid_sum15 + 1/6*(substeps[:, 6] + substeps[:, 7])), t_d[it - 1] + cRK[8]*dt)
+            substeps[:, 9] = f(u_sol[:,it - 1] + dt * (mid_sum15 + 1/6*(substeps[:, 6] + substeps[:, 7] + substeps[:, 8])), t_d[it - 1] + cRK[9]*dt)
+            substeps[:, 10] = f(u_sol[:,it - 1] + dt * (mid_sum15 + 1/6*(substeps[:, 6] + substeps[:, 7] + substeps[:, 8] + substeps[:, 9])), t_d[it - 1] + cRK[10]*dt)
+            subsum = zeros(Nx)
+            for isubsum in 1:10
+                subsum += substeps[:, isubsum]
+            end
+            u_sol[:,it] = u_sol[:,it - 1] + dt * 1/10 * subsum
+        end
+    end
+    return u_sol, u_exact
+end
+
 ####################################################################################################################################################
 ########################################################                          ##################################################################
 ########################################################    Telegraph equation    ##################################################################
@@ -145,7 +227,7 @@ function mymod(x, y)
     end
 end
 
-function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Float64, do_stabilize = false, c = 1.0, fix_eta = false)
+function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Float64, do_stabilize = false, c = 1.0, fix_eta = false, eq_type = "telegraph", fluxtype = "full")
     cellnumber = setup["cellnumber"]
     v = setup["v"]
     a = setup["a"]
@@ -155,6 +237,8 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     setup["nodes"] = nodes
     setup["deg"] = deg
     setup["num_flux"] = num_flux
+
+    setup["eq_type"] = eq_type
 
     ### Telegraph parameters
     epsilon = setup["epsilon"]
@@ -170,7 +254,13 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
 
     # Some Parameters
     xrange = 2*cellnumber*(deg+1)
-    invscale(i) = a*2/(v[i+1]-v[i])
+    function invscale(i, j)
+        if j < xrange/2
+            a*2/(v[i+1]-v[i])
+        else
+            2/(v[i+1]-v[i])
+        end
+    end
     shift(i) = (v[i+1]+v[i])/2
     scale(i) = (v[i+1]-v[i])/2
     
@@ -193,7 +283,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     
     # Creating Transformation Matrix from reference element to real elements
     for i in 1:2*cellnumber
-        Sc[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i-1) + 1:(deg+1)*i] = diagm(ones(T, deg+1)*invscale(mymod(i, cellnumber)))
+        Sc[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i-1) + 1:(deg+1)*i] = diagm(ones(T, deg+1)*invscale(mymod(i, cellnumber),i))
     end
     # Constructing the interpolation matrices to the vertices of a cell at reference element
     left_interpolation = interpolation_matrix(-1 , basis1)
@@ -243,7 +333,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     end
 
     # Constructing numerical fluxes(with periodic BC)
-    B = flux_terms_telegraph!(B, setup, deg)
+    B = flux_terms_telegraph!(B, setup, deg, fluxtype = fluxtype)
     # DoD-Stabilization
     if do_stabilize
         for i in 1:cellnumber
@@ -285,9 +375,15 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
         end
     end
     
-    # Construncting RHS Matrix
+    # Constructing RHS Matrix
     invM = inv(M)
-    RHS_mat = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + DM + DM_J1 +sM)
+    if eq_type == "telegraph"
+        RHS_mat = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + DM + DM_J1 - sM)
+    elseif eq_type == "wave"
+        #Wave equation (choosing epsilon =1/c)
+        RHS_mat = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + DM + DM_J1)
+    end
+
 
     # Store parts in dictionary
     splitRHS["invM"] = invM
@@ -312,8 +408,15 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     splitRHS["Flux_B_J0E1"] = Sc*invM* -TranspV * B_J0E1*V_J0E1
     splitRHS["Flux_B_J0E2"] = Sc*invM* -TranspV * B_J0E2*V_J0E2
     splitRHS["Volume_terms"] = Sc*invM * (DM + DM_J1)
-    # Constructing the initial conition
-    u0 = [u0_eval(x) for x in x_d]
+    # Constructing the initial conition (special case for j coordinate)
+    u0_rho = [u0_eval(x) for x in x_d]
+    if eq_type == "telegraph"
+        u0_j = cos.(x_d)
+    elseif eq_type == "wave"
+        u0_j = cos.(2*pi*x_d)
+    end
+
+    u0 = vcat(u0_rho, u0_j);
     setup["u0"] = u0
     setup["M"] = M_global
     setup["x_d"] = x_d
@@ -329,9 +432,10 @@ function flux_terms_telegraph!(B, setup, deg; fluxtype = "altlr")
     cellnumber = setup["cellnumber"]
     epsilon = setup["epsilon"]
     eps2 = 1/(2*epsilon)
-    epsq2 = 1/(2+epsilon^2)
+    epsq2 = 1/(2*epsilon^2)
     vshift = 2*cellnumber
-    if fluxtype == "altlr"
+    B = zeros(size(B))
+    if fluxtype == "full"
         for i in 1:2*cellnumber
             # auf rho wirkende Terme
             if i <= cellnumber
@@ -379,6 +483,100 @@ function flux_terms_telegraph!(B, setup, deg; fluxtype = "altlr")
                 B[2*cellnumber+vshift, 1+vshift] = -eps2
             end
         end
+        elseif fluxtype == "full2"
+            for i in 1:2*cellnumber
+                # auf rho wirkende Terme
+                if i <= cellnumber
+                    # orange/lila
+                    if i != 1
+                        B[2*i-1, 2*(i-1)] = -eps2
+                        B[2*i-1, 2*(i-1)+vshift] = -epsq2
+                    end
+                    B[1, 2*cellnumber] = -eps2
+                    B[1, 2*cellnumber+vshift] = -epsq2
+                    #grün/gelb
+                    B[2*i-1, 2*i-1] = eps2
+                    B[2*i-1, 2*i-1+vshift] = -epsq2
+                    #rot/pink
+                    B[2*i, 2*i] = eps2
+                    B[2*i, 2*i+vshift] = epsq2
+                    #blau/braun
+                    if i != cellnumber
+                        B[2*i, 2*i+1] = -eps2
+                        B[2*i, 2*i+1+vshift] = epsq2
+                    end
+                    B[2*cellnumber, 1] = -eps2
+                    B[2*cellnumber, 1+vshift] = epsq2
+                # auf j wirkende Terme
+                else
+                    # orange/lila
+                    if i != 1 + cellnumber
+                        B[2*i-1, 2*(i-1)-vshift] = -1/2
+                        B[2*i-1, 2*(i-1)] = -eps2
+                    end
+                    B[1+vshift, 2*cellnumber] = -1/2
+                    B[1+vshift, 2*cellnumber+vshift] = -eps2
+                    #grün/gelb
+                    B[2*i-1, 2*i-1-vshift] = -1/2
+                    B[2*i-1, 2*i-1] = eps2
+                    #rot/pink
+                    B[2*i, 2*i-vshift] = 1/2
+                    B[2*i, 2*i] = eps2
+                    #blau/braun
+                    if i != 2*cellnumber
+                        B[2*i, 2*i+1-vshift] = 1/2
+                        B[2*i, 2*i+1] = -eps2
+                    end
+                    B[2*cellnumber+vshift, 1] = 1/2
+                    B[2*cellnumber+vshift, 1+vshift] = -eps2
+                end
+            end
+    elseif fluxtype == "altlr"
+        for i in 1:2*cellnumber
+            # auf rho wirkende Terme
+            if i <= cellnumber
+                # lila
+                if i != 1
+                    B[2*i-1, 2*(i-1)+vshift] = -1/2 *2
+                end
+                B[1, 2*cellnumber+vshift] = -1/2 *2
+                # pink
+                B[2*i, 2*i+vshift] = 1/2 *2
+            # auf j wirkende Terme
+            else
+                # grün
+                B[2*i-1, 2*i-1-vshift] = -epsq2 *2
+                # blau
+                if i != 2*cellnumber
+                    B[2*i, 2*i+1-vshift] = epsq2 *2
+                end
+                B[2*cellnumber+vshift, 1] = epsq2 *2
+            end
+        end
+    elseif fluxtype == "altrl"
+        for i in 1:2*cellnumber
+            # auf rho wirkende Terme
+            if i <= cellnumber
+                #gelb
+                B[2*i-1, 2*i-1+vshift] = -1/2 *2
+                #braun
+                if i != cellnumber
+                    B[2*i, 2*i+1+vshift] = 1/2 *2
+                end
+                B[2*cellnumber, 1+vshift] = 1/2 *2
+            # auf j wirkende Terme
+            else
+                # orange/lila
+                if i != 1 + cellnumber
+                    B[2*i-1, 2*(i-1)-vshift] = -epsq2 *2
+                end
+                B[1+vshift, 2*cellnumber] = -epsq2 *2
+                #rot
+                B[2*i, 2*i-vshift] = epsq2 *2
+            end
+        end
+    else
+        println("No numerical flux chosen! Therefore, B=0")
     end
     return B
 end

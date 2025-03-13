@@ -1,5 +1,5 @@
 using Plots
-function vizualize(data, x_d, t_d; steplim = length(data[1,:]), u_exact = 0, clabel = 0) 
+function vizualize(data, x_d, t_d; steplim = min(length(data[1,:]), length(t_d)), u_exact = 0, clabel = 0) 
     if clabel == 0
         labelstring = ""
         else
@@ -13,5 +13,5 @@ function vizualize(data, x_d, t_d; steplim = length(data[1,:]), u_exact = 0, cla
             plot!(x_d ,u_exact[:,i],label = labelstring * "exact")
         end
     end
-    return gif(anim, fps = 100)
+    return gif(anim, fps = 250)
 end

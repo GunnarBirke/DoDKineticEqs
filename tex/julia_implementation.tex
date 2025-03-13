@@ -6,7 +6,7 @@ Therefore, we have $b_h=0$ and with $K=1, m=0$ $s_h=-\frac{1}{\epsilon^2}(g_h,\p
 So we end up with the semidiscretization 
 \begin{align*}
 (\partial_t\rho_h, \phi_h)&=\sum\limits_i \int_{E_i} \langle j_h \rangle \partial_x \phi_h + \sum_{i} \widehat{\langle j \rangle} \llbracket \phi_h \rrbracket_{i-\frac{1}{2}}\\
-(\partial_t j_h, \psi_h)&= \frac{1}{\epsilon^2}\sum_i \int_{E_i} \rho_h \partial_x \psi_h + \sum_i \widehat{ \rho_h} \llbracket \psi_h \rrbracket_{i - \frac{1}{2}} + \left(j_h, \psi_h\right),
+(\partial_t j_h, \psi_h)&= \frac{1}{\epsilon^2}\left(\sum_i \int_{E_i} \rho_h \partial_x \psi_h + \sum_i \widehat{ \rho_h} \llbracket \psi_h \rrbracket_{i - \frac{1}{2}} + \left(j_h, \psi_h\right)\right),
 \end{align*}
 which translates into the matrix-formulation
 \begin{equation*}
