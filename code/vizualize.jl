@@ -5,6 +5,7 @@ function vizualize(data, x_d, t_d; steplim = min(length(data[1,:]), length(t_d))
         else
         labelstring = clabel * ": "
     end
+    
     ylimits = [minimum(minimum(data)), maximum(maximum(data))]
     anim = @animate for i ∈ 1:steplim
         plot(legend = :outertopright, title = "T = $(t_d[i])", ylims = ylimits)

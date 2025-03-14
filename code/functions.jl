@@ -76,14 +76,17 @@ function get_exact_solution(setup)
     deg = setup["deg"]
     epsilon = setup["epsilon"]
     if setup["bcs"] == "periodic"
-        #return u_exact = [u0_eval(to_periodic(x-(a*(t)))) for x in x_d, t in t_d]
         if eq_type == "wave"
             u_wave_exact = zeros((deg+1)*2*N, length(t_d));
             u_wave_exact[1:(deg+1)*N, :] = [1/2*(sin(2*pi*(x-1/epsilon*t))+epsilon*cos(2*pi*(x-1/epsilon*t))+sin(2*pi*(x+1/epsilon*t))-epsilon*cos(2*pi*(x+1/epsilon*t))) for x in x_d, t in t_d];
             u_wave_exact[(deg+1)*N+1:(deg+1)*2*N, :] = [1/2*(1/epsilon*sin(2*pi*(x-1/epsilon*t))+cos(2*pi*(x-1/epsilon*t))-1/epsilon*sin(2*pi*(x+1/epsilon*t))+cos(2*pi*(x+1/epsilon*t))) for x in x_d, t in t_d];
             return u_wave_exact
         elseif eq_type == "telegraph"
-            println("not implemented yet")
+            r = -2/(1+sqrt(1-4*epsilon^2))
+            u_tel_exact = zeros((deg+1)*2*N, length(t_d));
+            u_tel_exact[1:(deg+1)*N, :] = [1/r*exp(r*t)*sin(x) for x in x_d, t in t_d];
+            u_tel_exact[(deg+1)*N+1:(deg+1)*2*N, :] = [exp(r*t)*cos(x) for x in x_d, t in t_d];
+            return u_tel_exact
         else 
             println("wrong eq type")
         end
@@ -378,7 +381,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     # Constructing RHS Matrix
     invM = inv(M)
     if eq_type == "telegraph"
-        RHS_mat = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + DM + DM_J1 - sM)
+        RHS_mat = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + DM + DM_J1) -invM*sM
     elseif eq_type == "wave"
         #Wave equation (choosing epsilon =1/c)
         RHS_mat = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + DM + DM_J1)
@@ -401,6 +404,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     splitRHS["M_used"] = M
     splitRHS["M_global"] = M_global
     splitRHS["Sc"] = Sc
+    splitRHS["sM"] = sM
 
     splitRHS["Flux_terms"] = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2))
     splitRHS["Flux_B"] = Sc*invM* -TranspV * B*V
