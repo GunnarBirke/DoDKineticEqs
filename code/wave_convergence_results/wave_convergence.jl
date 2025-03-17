@@ -1,5 +1,6 @@
 include("../functions.jl")
 include("../analysis_tools_wave.jl")
+include("../functionsRK.jl")
 
 using LinearAlgebra, Plots, PolynomialBases, DelimitedFiles, LaTeXStrings
 

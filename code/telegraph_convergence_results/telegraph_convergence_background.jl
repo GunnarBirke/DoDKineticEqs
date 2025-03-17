@@ -1,5 +1,6 @@
 include("../functions.jl")
 include("../analysis_tools_telegraph.jl")
+include("../functionsRK.jl")
 
 using LinearAlgebra, Plots, PolynomialBases, DelimitedFiles, LaTeXStrings
 

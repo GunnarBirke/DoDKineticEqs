@@ -1,6 +1,7 @@
 using LinearAlgebra, Plots, PolynomialBases, OrdinaryDiffEq, PrettyTables, DelimitedFiles
 include("functions.jl")
 include("vizualize.jl")
+include("functionsRK.jl")
 
 #### set up problem
 N = 200

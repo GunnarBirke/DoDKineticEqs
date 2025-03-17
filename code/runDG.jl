@@ -1,6 +1,7 @@
 using LinearAlgebra, Plots, PolynomialBases, OrdinaryDiffEq, PrettyTables, DelimitedFiles
 include("functions.jl")
 include("vizualize.jl")
+include("functionsRK.jl")
 
 #### set up problem
 N = 20
@@ -81,7 +82,7 @@ plot(camera = (230, 35), xlabel = "t", ylabel = "x")
 ########################### animated plot ###########################
 
 # full solution
-vizualize(full_sol, x_d, problem["t_d"], clabel = "full", u_exact = u_exact[1:Int(size(u_exact)[1]/2), :] .+ u_exact[Int(size(u_exact)[1]/2+1):size(u_exact)[1], :]*epsilon)
+#vizualize(full_sol, x_d, problem["t_d"], clabel = "full", u_exact = u_exact[1:Int(size(u_exact)[1]/2), :] .+ u_exact[Int(size(u_exact)[1]/2+1):size(u_exact)[1], :]*epsilon)
 
 # 1. component
 #vizualize(sol[1:Int(size(sol)[1]/2), :], x_d, problem["t_d"], clabel = "rho", u_exact = u_exact[1:Int(size(u_exact)[1]/2), :])
