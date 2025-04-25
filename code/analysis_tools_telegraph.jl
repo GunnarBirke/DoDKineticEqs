@@ -2,11 +2,11 @@
 ############################ Convergence test ###############################
 #############################################################################
 
-function test_convergence_telegraph_background(basis, deg ; TMM = SSPRK3, exprange = [3,8], CFL = 0.1, a=1, epsilon = 0.4)
+function test_convergence_telegraph_background(basis, deg ; Tmax = 5.0, TMM = SSPRK3, exprange = [3,8], CFL = 0.1, a=1, epsilon = 0.4)
     stepsizes = 2 .^range(exprange[1],exprange[2])
     errors = zeros(length(stepsizes))
     for (istep, stepsize) in enumerate(stepsizes)
-        problem = setup_problem_eq("telsin", -pi, pi, stepsize, Tmax = 5, a = a, CFL = CFL, bcs = "periodic", epsilon = epsilon);
+        problem = setup_problem_eq("telsin", -pi, pi, stepsize, Tmax = Tmax, a = a, CFL = CFL, bcs = "periodic", epsilon = epsilon);
         RHS_mat, problem = DGsemidiscretization_DoD_telegraph(problem, deg, basis, "Upwind",  do_stabilize = false, eq_type = "telegraph", fluxtype = "full");
         solution, u_exact = TMM(problem, RHS_mat)
         #errors[istep] = norm(solution[:, end] - u_exact[:, end])

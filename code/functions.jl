@@ -94,28 +94,15 @@ function get_exact_solution(setup)
 end
 
 function f_RHS(u, t, RHS_mat, setup)
-    u0_eval = setup["u0_eval"]
-    x_d = setup["x_d"]
-    a = setup["a"]
-    basis = setup["basis"]
-    deg = setup["deg"]
-    v = setup["v"]
+    #u0_eval = setup["u0_eval"]
+    #x_d = setup["x_d"]
+    #a = setup["a"]
+    #basis = setup["basis"]
+    #deg = setup["deg"]
+    #v = setup["v"]
     # Nx = length(x_d)*2, because wave/telegraph is a 2-dim system of equations
-    Nx = length(x_d)*2
-    g_L = zeros(Nx)
-    basis1 = basis
-    for j in 1:deg+1
-        basis1.nodes[j] = x_d[j] 
-    end
-    if setup["bcs"] == "dirichlet"
-        Vs = interpolation_matrix(setup["xmin"], basis1)
-        g_L[1:deg+1] = inv(diagm(basis.weights))*Vs'*u0_eval(-a*(t)) *2/(v[2]-v[1])
-    end
-    #(letzter Faktor ist invscale(1))
-    #display(t)
-    #display(u0_eval(-a*(t)))
-    #display(g_L[1:6])
-    return RHS_mat * u + a* g_L
+    #Nx = length(x_d)*2
+    return RHS_mat * u
 end
 
 function include_cut_cell(setup, cutcell_size, cutcell_pos)
@@ -166,7 +153,8 @@ function mymod(x, y)
     end
 end
 
-function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Float64, do_stabilize = false, c = 1.0, fix_eta = false, eq_type = "telegraph", fluxtype = "full")
+function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
+                                             T = Float64, do_stabilize = false, c = 1.0, fix_eta = true, eq_type = "telegraph", fluxtype = "full", include_b_h = true, ext_test_func = true)
     cellnumber = setup["cellnumber"]
     v = setup["v"]
     a = setup["a"]
@@ -176,6 +164,8 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     setup["nodes"] = nodes
     setup["deg"] = deg
     setup["num_flux"] = num_flux
+    setup["fix_eta"] = fix_eta
+    setup["c"] = c
 
     setup["eq_type"] = eq_type
 
@@ -193,6 +183,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
 
     # Some Parameters
     xrange = 2*cellnumber*(deg+1)
+    setup["xrange"] = xrange
     function invscale(i, j)
         if j < xrange/2
             a*2/(v[i+1]-v[i])
@@ -207,16 +198,40 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     x_d = zeros(T, Int(xrange/2))
     M = zeros(T, xrange, xrange)
     M_global = zeros(T, xrange, xrange) # TODO
-    DM = zeros(T, xrange, xrange)
-    sM = zeros(T, xrange, xrange)
-    DM_J1 = zeros(T, xrange, xrange)
-    B = zeros(T, cellnumber*4, cellnumber*4)
-    B_J0 = zeros(T, cellnumber*4, cellnumber*4)
-    B_J0E1 = zeros(T, cellnumber*4, cellnumber*4)
-    B_J0E2 = zeros(T, cellnumber*4, cellnumber*4)
+
+    ex_DM = zeros(T, xrange, xrange)
+    ex_sM = zeros(T, xrange, xrange)
+    ex_B = zeros(T, cellnumber*4, cellnumber*4)
+
+    im_DM = zeros(T, xrange, xrange)
+    im_sM = zeros(T, xrange, xrange)
+    im_B = zeros(T, cellnumber*4, cellnumber*4)
+
+    A_DM = zeros(T, xrange, xrange)
+    A_B = zeros(T, cellnumber*4, cellnumber*4)
+
+    ex_DM_J1 = zeros(T, xrange, xrange)
+    im_DM_J1 = zeros(T, xrange, xrange)
+    im_DM_J1 = zeros(T, xrange, xrange)    
+    ex_B_J0 = zeros(T, cellnumber*4, cellnumber*4)
+    ex_B_J0E1 = zeros(T, cellnumber*4, cellnumber*4)
+    ex_B_J0E2 = zeros(T, cellnumber*4, cellnumber*4)
+    im_B_J0 = zeros(T, cellnumber*4, cellnumber*4)
+    im_B_J0E1 = zeros(T, cellnumber*4, cellnumber*4)
+    im_B_J0E2 = zeros(T, cellnumber*4, cellnumber*4)
+    A_B_J0 = zeros(T, cellnumber*4, cellnumber*4)
+    A_B_J0E1 = zeros(T, cellnumber*4, cellnumber*4)
+    A_B_J0E2 = zeros(T, cellnumber*4, cellnumber*4)
     V = zeros(T, cellnumber*4, xrange)
-    V_J0E1 = zeros(T, cellnumber*4, xrange)
-    V_J0E2 = zeros(T, cellnumber*4, xrange)
+    ex_V_J0E1 = zeros(T, cellnumber*4, xrange)
+    ex_V_J0E2 = zeros(T, cellnumber*4, xrange)
+    im_V_J0E1 = zeros(T, cellnumber*4, xrange)
+    im_V_J0E2 = zeros(T, cellnumber*4, xrange)
+    A_V_J0E1 = zeros(T, cellnumber*4, xrange)
+    A_V_J0E2 = zeros(T, cellnumber*4, xrange)
+
+    ex_A = zeros(T, xrange, xrange)
+
     TranspV = zeros(T, xrange, cellnumber*4)
     Sc = zeros(T, xrange, xrange)
     
@@ -241,10 +256,10 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
         M_global[(deg+1)*(i-1)+1:(deg+1)*i, (deg+1)*(i-1)+1:(deg+1)*i] = diagm(basis.weights) * scale(mymod(i, cellnumber))
         # differentiate between rho and j, distribute correctly
         if i <= cellnumber
-            DM[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(cellnumber+(i-1)) + 1:(deg+1)*(cellnumber+i)] = basis.D' * diagm(basis.weights)
+            ex_DM[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(cellnumber+(i-1)) + 1:(deg+1)*(cellnumber+i)] = basis.D' * diagm(basis.weights)
         else
-            DM[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*((i-1)-cellnumber) + 1:(deg+1)*(i-cellnumber)] = basis.D' * diagm(basis.weights)/(epsilon^2)
-            sM[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i-1) + 1:(deg+1)*i] = diagm(basis.weights)/(epsilon^2)
+            im_DM[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*((i-1)-cellnumber) + 1:(deg+1)*(i-cellnumber)] = basis.D' * diagm(basis.weights)/(epsilon^2)
+            im_sM[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i-1) + 1:(deg+1)*i] = diagm(basis.weights)/(epsilon^2)
         end
 
         # Constructing the Interpolation to the vertices for the flux terms with Gauss-Legendre nodes
@@ -253,26 +268,71 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
         V[2*i-1, (deg+1)*(i-1) + 1:(deg+1)*i] = left_interpolation
         V[2*i, (deg+1)*(i-1) + 1:(deg+1)*i] = right_interpolation
         
-        # Extrapolation to the Inflow of Cell + 1(V2) and the Outflow of Cut-Cell(V3) from Cell - 1 (from the perspective of Cell -1).
+        # Extrapolation to the Inflow of Cell + 1(V_J0E1) and the Outflow of Cut-Cell(V_J0E2) from Cell - 1 (from the perspective of Cell -1).
+        #=
         if do_stabilize
             if i < cellnumber
                 if 2*(v[i+2]-v[i+1])/h<1
-                    if fix_eta == false
-                        eta = 1-minimum([1/(2*deg+1)*(v[i+1]-v[i])/((t_d[2]-t_d[1])*a), 1.0])
-                    else
-                        eta = 1-minimum([(v[i+1]-v[i])/h*1/c, 1.0])
-                    end
-                    V_J0E1[2*i+2, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1) 
-                    V_J0E2[2*i+3, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1)
+                    # Dies ist nur für den altlr Fluss implementiert. Für Fluss in andere Richtung, müsste hier eine Fallunterscheidung einbaut werden
+                    # (und selbstverständlich die B_J1/J2 Terme angepasst werden). Andere mögliche Einträge für V_J0E1/E2 sind aktuell auskommentiert
+                    #V_J0E1[2*i+2, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1) 
+                    #V_J0E1[2*i+2 + 2*cellnumber, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1) 
+                    #V_J0E1[2*i+2, (deg+1)*(i-1) + 1 + cellnumber:(deg+1)*i + cellnumber] = interpolation_matrix(v[i+2], basis1) 
+                    ex_V_J0E1[2*i+2 + 2*cellnumber, (deg+1)*(i-1) + 1 + cellnumber:(deg+1)*i + cellnumber] = interpolation_matrix(v[i+2], basis1) 
+
+                    #V_J0E2[2*i+3, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1)
+                    #V_J0E2[2*i+3 + 2*cellnumber, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1)
+                    #V_J0E2[2*i+3, (deg+1)*(i-1) + 1 + cellnumber:(deg+1)*i + cellnumber] = interpolation_matrix(v[i+2], basis1)
+                    ex_V_J0E2[2*i+3 + 2*cellnumber, (deg+1)*(i-1) + 1 + cellnumber:(deg+1)*i + cellnumber] = interpolation_matrix(v[i+2], basis1)
+
+                    #im_V_J0E1[2*i+2 + 2*cellnumber, (deg+1)*(i-1) + 1 + cellnumber:(deg+1)*i + cellnumber] = interpolation_matrix(v[i+2], basis1) 
+                    #im_V_J0E1[2*i+2 + 2*cellnumber, (deg+1)*(i-1) + 1 + cellnumber:(deg+1)*i + cellnumber] = interpolation_matrix(v[i+2], basis1) 
                 end
             end
         end
+        =#
+        #
+        if do_stabilize
+            if i < cellnumber
+                if 2*(v[i+1]-v[i])/h<1
+                    # cell - 1 is inflow cell, therefore construct basis1 on cell - 1
+                    for j in 1:deg+1
+                        basis1.nodes[j] = x_d[(deg+1)*(i-2) + j] 
+                    end
+                    # Dies ist nur für den altlr Fluss implementiert. Für Fluss in andere Richtung, müsste hier eine Fallunterscheidung einbaut werden
+                    # (und selbstverständlich die B_J1/J2 Terme angepasst werden). Andere mögliche Einträge für V_J0E1/E2 sind aktuell auskommentiert
+                    #V_J0E1[2*i+2, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1) 
+                    #V_J0E1[2*i+2 + 2*cellnumber, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1) 
+                    #V_J0E1[2*i+2, (deg+1)*(i-1) + 1 + cellnumber:(deg+1)*i + cellnumber] = interpolation_matrix(v[i+2], basis1) 
+                    ex_V_J0E1[2*(i-1)+2 + 2*cellnumber, (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] = interpolation_matrix(v[i+1], basis1) 
+                    #V_J0E2[2*i+3, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1)
+                    #V_J0E2[2*i+3 + 2*cellnumber, (deg+1)*(i-1) + 1:(deg+1)*i] = interpolation_matrix(v[i+2], basis1)
+                    #V_J0E2[2*i+3, (deg+1)*(i-1) + 1 + cellnumber:(deg+1)*i + cellnumber] = interpolation_matrix(v[i+2], basis1)
+                    ex_V_J0E2[2*(i-1)+3 + 2*cellnumber, (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] = interpolation_matrix(v[i+1], basis1)
+                    
+                    # cell + 1 is inflow cell, therefore construct basis1 on cell + 1
+                    for j in 1:deg+1
+                        basis1.nodes[j] = x_d[(deg+1)*(i) + j] 
+                    end
+                    im_V_J0E1[2*i-1, (deg+1)*i + 1:(deg+1)*(i+1)] = interpolation_matrix(v[i], basis1) 
+                    im_V_J0E2[2*i-2, (deg+1)*i + 1:(deg+1)*(i+1)] = interpolation_matrix(v[i], basis1)
+                    # ACHTUNG!! Neben den im_VJ0E1/im_Vj=E2 termen ist es auch wichtig nochmal auf den Term zu schauen, der uns gerade die Domain-of-Dependence in der 2. Komponente erweitert,
+                    # ohne das wir es möchten! Eigentlich sollten an dieser stelle ja noch keine extra Terme in der semidiskretisierung auftreten, sondern nur terme angepasst werden
+                end
+            end
+        end
+        #
             
         TranspV[(deg+1)*(i-1)+1:(deg+1)*i, 2*i-1:2*i] = V[2*i-1:2*i, (deg+1)*(i-1) + 1:(deg+1)*i]'
     end
 
     # Constructing numerical fluxes(with periodic BC)
-    B = flux_terms_telegraph!(B, setup, deg, fluxtype = fluxtype)
+    ex_B, im_B = flux_terms_telegraph!(ex_B, im_B, setup, deg, fluxtype = fluxtype)
+    # DoD-Stabilization
+    if do_stabilize
+        ex_B_J0, ex_B_J0E1, ex_B_J0E2, im_B_J0, im_B_J0E1, im_B_J0E2 = flux_terms_telegraph_DoD!(ex_B, im_B, setup, deg, fluxtype = fluxtype)
+    end
+
     # DoD-Stabilization
     if do_stabilize
         for i in 1:cellnumber
@@ -282,18 +342,9 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
                 else
                     eta = 1-minimum([(v[i+1]-v[i])/h*1/c, 1.0])
                 end
-                # Reduced Outflow  from Cut-Cell
-                B_J0[2*i, 2*i] += -1 * eta
-                # Reduced Inflow into Cell + 1 from Cut-Cell
-                B_J0[2*(i) + 1, 2*(i)] += 1 * eta
-                # Extended Outflowflow Cut-Cell from Cell -1 (corresponds to Reduced Inflow into Cut-Cell)
-                B_J0E1[2*i , 2*i] += 1 * eta
-                # Extended Inflow into Cell + 1 from Cell - 1
-                B_J0E2[2*(i) + 1, 2*(i) + 1]+= -1 * eta
-                
                 # Volume Term
                 if deg>0
-                    DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                    ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
                         - basis.D' * diagm(basis.weights) * eta
                     
                     basis2=nodes(deg)
@@ -302,13 +353,35 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
                         basis2.nodes[j] = x_d[(deg+1)*(i-2) + j] 
                     end
                     Vol_interpol = interpolation_matrix(x_d[(deg+1)*(i-1) + 1:(deg+1)*(i)] , basis2)
-                    DM_J1[(deg+1)*(i-1) + 1:(deg+1)*(i), (deg+1)*(i-2) + 1:(deg+1)*(i-1)] += 
+                    ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*(i), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
                         + basis.D' * diagm(basis.weights) * Vol_interpol * eta
                     # Extra-Stabilityterm with the extended test-function (L_E_in(u_h)-u_h)*L_E_in(v_h)
-                    DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(i-1) + 1:(deg+1)*i] +=
-                        Vol_interpol' *  basis.D' * diagm(basis.weights) * eta
-                    DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(i-2) + 1:(deg+1)*(i-1)] += 
-                        - Vol_interpol' * basis.D' * diagm(basis.weights) * Vol_interpol * eta
+                    if ext_test_func == true
+                        ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                            Vol_interpol' *  basis.D' * diagm(basis.weights) * eta
+                        ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
+                            - Vol_interpol' * basis.D' * diagm(basis.weights) * Vol_interpol * eta
+                    end
+
+
+                    im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                        - basis.D' * diagm(basis.weights) * eta /(epsilon^2)
+                    
+                    basis2=nodes(deg)
+                    for j in 1:deg+1
+                        # Inserting these nodes into the structure basis2, to adapt the field basis1.interp_matrix to the used nodes.
+                        basis2.nodes[j] = x_d[(deg+1)*(i) + j] 
+                    end
+                    Vol_interpol = interpolation_matrix(x_d[(deg+1)*(i-1) + 1:(deg+1)*(i)] , basis2)
+                    im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
+                        + basis.D' * diagm(basis.weights) * Vol_interpol * eta /(epsilon^2)
+                    # Extra-Stabilityterm with the extended test-function (L_E_in(u_h)-u_h)*L_E_in(v_h)
+                    if ext_test_func == true
+                        im_DM_J1[(deg+1)*(cellnumber + (i)) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                            Vol_interpol' *  basis.D' * diagm(basis.weights) * eta /(epsilon^2)
+                        im_DM_J1[(deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
+                            - Vol_interpol' * basis.D' * diagm(basis.weights) * Vol_interpol * eta /(epsilon^2)
+                    end
                 end
             end
         end
@@ -317,37 +390,72 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
     # Constructing RHS Matrix
     invM = inv(M)
     if eq_type == "telegraph"
-        RHS_mat = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + DM + DM_J1) -invM*sM
+        splitRHS["Dminus"] = -(Sc*invM*(-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM + ex_DM_J1))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
+        splitRHS["Dplus"] = -epsilon^2*(Sc*invM*(-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM + im_DM_J1))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]
+        A = 1/(2*epsilon)*(splitRHS["Dplus"]-splitRHS["Dminus"])
+        #display(A)
+        if include_b_h == true
+            ex_A[Int(xrange/2)+1:xrange, Int(xrange/2)+1:xrange] = A
+        end
+        #display(ex_A[Int(xrange/2)+1:xrange, Int(xrange/2)+1:xrange])
+
+        ex_RHS_mat = Sc*invM * (-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM + ex_DM_J1) -invM*ex_sM + ex_A
+        im_RHS_mat = Sc*invM * (-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM + im_DM_J1) -invM*im_sM
+        RHS_mat = Sc*invM * (-TranspV* ((ex_B + im_B)*V + (ex_B_J0+im_B_J0)*V + ex_B_J0E1*ex_V_J0E1 + im_B_J0E1*im_V_J0E1 + ex_B_J0E2*ex_V_J0E2 + im_B_J0E2*im_V_J0E2) + (ex_DM+im_DM) + (ex_DM_J1 + im_DM_J1)) -invM*(ex_sM + im_sM) + ex_A
     elseif eq_type == "wave"
-        #Wave equation (choosing epsilon =1/c)
-        RHS_mat = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + DM + DM_J1)
+        #Wave equation (choosing epsilon =1/c), not applicable for DoD here
+        ex_RHS_mat = Sc*invM * (-TranspV* (ex_B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + ex_DM + DM_J1)
+        im_RHS_mat = Sc*invM * (-TranspV* (im_B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + im_DM + DM_J1)
+        RHS_mat = Sc*invM * (-TranspV* ((ex_B + im_B)*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2) + (ex_DM+im_DM) + DM_J1)
     end
 
+    setup["ex_RHS_mat"] = ex_RHS_mat
+    setup["im_RHS_mat"] = im_RHS_mat
+    setup["RHS_mat"] = RHS_mat
 
     # Store parts in dictionary
+    splitRHS["Sc"] = Sc
+    splitRHS["M"] = M
     splitRHS["invM"] = invM
     splitRHS["TranspV"] = TranspV
-    splitRHS["B"] = B
     splitRHS["V"] = V
-    splitRHS["B_J0"] = B_J0
-    splitRHS["B_J0E1"] = B_J0E1
-    splitRHS["B_J0E2"] = B_J0E2
-    splitRHS["V_J0E1"] = V_J0E1
-    splitRHS["V_J0E2"] = V_J0E2
-    splitRHS["DM"] = DM
-    splitRHS["DM_J1"] = DM_J1
-    splitRHS["TransD"] = basis.D'
-    splitRHS["M_used"] = M
-    splitRHS["M_global"] = M_global
-    splitRHS["Sc"] = Sc
-    splitRHS["sM"] = sM
+    
+    splitRHS["ex_sM"] = ex_sM
+    splitRHS["im_sM"] = im_sM
+    splitRHS["ex_B"] = ex_B
+    splitRHS["im_B"] = im_B
+    splitRHS["ex_DM"] = ex_DM
+    splitRHS["im_DM"] = im_DM
+    splitRHS["TranspV*ex_B*V"] = TranspV*ex_B*V
+    splitRHS["TranspV*im_B*V"] = TranspV*im_B*V
 
-    splitRHS["Flux_terms"] = Sc*invM * (-TranspV* (B*V + B_J0*V + B_J0E1*V_J0E1 + B_J0E2*V_J0E2))
-    splitRHS["Flux_B"] = Sc*invM* -TranspV * B*V
-    splitRHS["Flux_B_J0"] = Sc*invM* -TranspV * B_J0*V
-    splitRHS["Flux_B_J0E1"] = Sc*invM* -TranspV * B_J0E1*V_J0E1
-    splitRHS["Flux_B_J0E2"] = Sc*invM* -TranspV * B_J0E2*V_J0E2
-    splitRHS["Volume_terms"] = Sc*invM * (DM + DM_J1)
+    splitRHS["ex_V_J0E1"] = ex_V_J0E1
+    splitRHS["ex_V_J0E2"] = ex_V_J0E2
+    splitRHS["im_V_J0E1"] = im_V_J0E1
+    splitRHS["im_V_J0E2"] = im_V_J0E2
+    splitRHS["ex_B_J0"] = ex_B_J0
+    splitRHS["ex_B_J0E1"] = ex_B_J0E1
+    splitRHS["ex_B_J0E2"] = ex_B_J0E2
+    splitRHS["im_B_J0"] = im_B_J0
+    splitRHS["im_B_J0E1"] = im_B_J0E1
+    splitRHS["im_B_J0E2"] = im_B_J0E2
+    splitRHS["TranspV*ex_B_J0*V"] = TranspV*ex_B_J0*V
+    splitRHS["TranspV*im_B_J0*V"] = TranspV*im_B_J0*V
+    splitRHS["TranspV*ex_B_J0E1*ex_V_J0E1"] = TranspV*ex_B_J0E1*ex_V_J0E1
+    splitRHS["TranspV*im_B_J0E1*im_V_J0E1"] = TranspV*im_B_J0E1*im_V_J0E1
+    splitRHS["TranspV*ex_B_J0E2*ex_V_J0E2"] = TranspV*ex_B_J0E2*ex_V_J0E2
+    splitRHS["TranspV*im_B_J0E2*im_V_J0E2"] = TranspV*im_B_J0E2*im_V_J0E2
+    splitRHS["ex_DM_J1"] = ex_DM_J1
+    splitRHS["im_DM_J1"] = im_DM_J1
+
+    splitRHS["FLUXTERMS"] = Sc*invM * (-TranspV* ((ex_B + im_B)*V + (ex_B_J0+im_B_J0)*V + ex_B_J0E1*ex_V_J0E1 + im_B_J0E1*im_V_J0E1 + ex_B_J0E2*ex_V_J0E2 + im_B_J0E2*im_V_J0E2))
+    splitRHS["VOLTERMS"] = Sc*invM * ((ex_DM+im_DM) + (ex_DM_J1 + im_DM_J1)) -invM*(ex_sM + im_sM)
+
+    Mh = inv(Sc[1:Int(xrange/2), 1:Int(xrange/2)])*M[1:Int(xrange/2), 1:Int(xrange/2)]
+    splitRHS["Mh"] = Mh
+    splitRHS["IntByParts"] = Mh*splitRHS["Dplus"] + splitRHS["Dminus"]'*Mh
+    splitRHS["symm_negsemi"] = Mh*(splitRHS["Dplus"]-splitRHS["Dminus"])
+
     # Constructing the initial conition (special case for j coordinate)
     u0_rho = [u0_eval(x) for x in x_d]
     if eq_type == "telegraph"
@@ -368,59 +476,60 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux; T = Flo
 end
 
 
-function flux_terms_telegraph!(B, setup, deg; fluxtype = "altlr")
+function flux_terms_telegraph!(ex_B, im_B, setup, deg; fluxtype = "altlr")
     cellnumber = setup["cellnumber"]
     epsilon = setup["epsilon"]
     eps2 = 1/(2*epsilon)
     epsq2 = 1/(2*epsilon^2)
     vshift = 2*cellnumber
-    B = zeros(size(B))
+    ex_B = zeros(size(ex_B))
+    im_B = zeros(size(im_B))
     if fluxtype == "full"
         for i in 1:2*cellnumber
             # auf rho wirkende Terme
             if i <= cellnumber
                 # orange/lila
                 if i != 1
-                    B[2*i-1, 2*(i-1)] = -eps2
-                    B[2*i-1, 2*(i-1)+vshift] = -1/2
+                    ex_B[2*i-1, 2*(i-1)] = -eps2
+                    ex_B[2*i-1, 2*(i-1)+vshift] = -1/2
                 end
-                B[1, 2*cellnumber] = -eps2
-                B[1, 2*cellnumber+vshift] = -1/2
+                ex_B[1, 2*cellnumber] = -eps2
+                ex_B[1, 2*cellnumber+vshift] = -1/2
                 #grün/gelb
-                B[2*i-1, 2*i-1] = eps2
-                B[2*i-1, 2*i-1+vshift] = -1/2
+                ex_B[2*i-1, 2*i-1] = eps2
+                ex_B[2*i-1, 2*i-1+vshift] = -1/2
                 #rot/pink
-                B[2*i, 2*i] = eps2
-                B[2*i, 2*i+vshift] = 1/2
+                ex_B[2*i, 2*i] = eps2
+                ex_B[2*i, 2*i+vshift] = 1/2
                 #blau/braun
                 if i != cellnumber
-                    B[2*i, 2*i+1] = -eps2
-                    B[2*i, 2*i+1+vshift] = 1/2
+                    ex_B[2*i, 2*i+1] = -eps2
+                    ex_B[2*i, 2*i+1+vshift] = 1/2
                 end
-                B[2*cellnumber, 1] = -eps2
-                B[2*cellnumber, 1+vshift] = 1/2
+                ex_B[2*cellnumber, 1] = -eps2
+                ex_B[2*cellnumber, 1+vshift] = 1/2
             # auf j wirkende Terme
             else
                 # orange/lila
                 if i != 1 + cellnumber
-                    B[2*i-1, 2*(i-1)-vshift] = -epsq2
-                    B[2*i-1, 2*(i-1)] = -eps2
+                    im_B[2*i-1, 2*(i-1)-vshift] = -epsq2
+                    im_B[2*i-1, 2*(i-1)] = -eps2
                 end
-                B[1+vshift, 2*cellnumber] = -epsq2
-                B[1+vshift, 2*cellnumber+vshift] = -eps2
+                im_B[1+vshift, 2*cellnumber] = -epsq2
+                im_B[1+vshift, 2*cellnumber+vshift] = -eps2
                 #grün/gelb
-                B[2*i-1, 2*i-1-vshift] = -epsq2
-                B[2*i-1, 2*i-1] = eps2
+                im_B[2*i-1, 2*i-1-vshift] = -epsq2
+                im_B[2*i-1, 2*i-1] = eps2
                 #rot/pink
-                B[2*i, 2*i-vshift] = epsq2
-                B[2*i, 2*i] = eps2
+                im_B[2*i, 2*i-vshift] = epsq2
+                im_B[2*i, 2*i] = eps2
                 #blau/braun
                 if i != 2*cellnumber
-                    B[2*i, 2*i+1-vshift] = epsq2
-                    B[2*i, 2*i+1] = -eps2
+                    im_B[2*i, 2*i+1-vshift] = epsq2
+                    im_B[2*i, 2*i+1] = -eps2
                 end
-                B[2*cellnumber+vshift, 1] = epsq2
-                B[2*cellnumber+vshift, 1+vshift] = -eps2
+                im_B[2*cellnumber+vshift, 1] = epsq2
+                im_B[2*cellnumber+vshift, 1+vshift] = -eps2
             end
         end
         elseif fluxtype == "full2"
@@ -429,46 +538,46 @@ function flux_terms_telegraph!(B, setup, deg; fluxtype = "altlr")
                 if i <= cellnumber
                     # orange/lila
                     if i != 1
-                        B[2*i-1, 2*(i-1)] = -eps2
-                        B[2*i-1, 2*(i-1)+vshift] = -epsq2
+                        ex_B[2*i-1, 2*(i-1)] = -eps2
+                        ex_B[2*i-1, 2*(i-1)+vshift] = -epsq2
                     end
-                    B[1, 2*cellnumber] = -eps2
-                    B[1, 2*cellnumber+vshift] = -epsq2
+                    ex_B[1, 2*cellnumber] = -eps2
+                    ex_B[1, 2*cellnumber+vshift] = -epsq2
                     #grün/gelb
-                    B[2*i-1, 2*i-1] = eps2
-                    B[2*i-1, 2*i-1+vshift] = -epsq2
+                    ex_B[2*i-1, 2*i-1] = eps2
+                    ex_B[2*i-1, 2*i-1+vshift] = -epsq2
                     #rot/pink
-                    B[2*i, 2*i] = eps2
-                    B[2*i, 2*i+vshift] = epsq2
+                    ex_B[2*i, 2*i] = eps2
+                    ex_B[2*i, 2*i+vshift] = epsq2
                     #blau/braun
                     if i != cellnumber
-                        B[2*i, 2*i+1] = -eps2
-                        B[2*i, 2*i+1+vshift] = epsq2
+                        ex_B[2*i, 2*i+1] = -eps2
+                        ex_B[2*i, 2*i+1+vshift] = epsq2
                     end
-                    B[2*cellnumber, 1] = -eps2
-                    B[2*cellnumber, 1+vshift] = epsq2
+                    ex_B[2*cellnumber, 1] = -eps2
+                    ex_B[2*cellnumber, 1+vshift] = epsq2
                 # auf j wirkende Terme
                 else
                     # orange/lila
                     if i != 1 + cellnumber
-                        B[2*i-1, 2*(i-1)-vshift] = -1/2
-                        B[2*i-1, 2*(i-1)] = -eps2
+                        im_B[2*i-1, 2*(i-1)-vshift] = -1/2
+                        im_B[2*i-1, 2*(i-1)] = -eps2
                     end
-                    B[1+vshift, 2*cellnumber] = -1/2
-                    B[1+vshift, 2*cellnumber+vshift] = -eps2
+                    im_B[1+vshift, 2*cellnumber] = -1/2
+                    im_B[1+vshift, 2*cellnumber+vshift] = -eps2
                     #grün/gelb
-                    B[2*i-1, 2*i-1-vshift] = -1/2
-                    B[2*i-1, 2*i-1] = eps2
+                    im_B[2*i-1, 2*i-1-vshift] = -1/2
+                    im_B[2*i-1, 2*i-1] = eps2
                     #rot/pink
-                    B[2*i, 2*i-vshift] = 1/2
-                    B[2*i, 2*i] = eps2
+                    im_B[2*i, 2*i-vshift] = 1/2
+                    im_B[2*i, 2*i] = eps2
                     #blau/braun
                     if i != 2*cellnumber
-                        B[2*i, 2*i+1-vshift] = 1/2
-                        B[2*i, 2*i+1] = -eps2
+                        im_B[2*i, 2*i+1-vshift] = 1/2
+                        im_B[2*i, 2*i+1] = -eps2
                     end
-                    B[2*cellnumber+vshift, 1] = 1/2
-                    B[2*cellnumber+vshift, 1+vshift] = -eps2
+                    im_B[2*cellnumber+vshift, 1] = 1/2
+                    im_B[2*cellnumber+vshift, 1+vshift] = -eps2
                 end
             end
     elseif fluxtype == "altlr"
@@ -477,20 +586,20 @@ function flux_terms_telegraph!(B, setup, deg; fluxtype = "altlr")
             if i <= cellnumber
                 # lila
                 if i != 1
-                    B[2*i-1, 2*(i-1)+vshift] = -1/2 *2
+                    ex_B[2*i-1, 2*(i-1)+vshift] = -1/2 *2
                 end
-                B[1, 2*cellnumber+vshift] = -1/2 *2
+                ex_B[1, 2*cellnumber+vshift] = -1/2 *2
                 # pink
-                B[2*i, 2*i+vshift] = 1/2 *2
+                ex_B[2*i, 2*i+vshift] = 1/2 *2
             # auf j wirkende Terme
             else
                 # grün
-                B[2*i-1, 2*i-1-vshift] = -epsq2 *2
+                im_B[2*i-1, 2*i-1-vshift] = -epsq2 *2
                 # blau
                 if i != 2*cellnumber
-                    B[2*i, 2*i+1-vshift] = epsq2 *2
+                    im_B[2*i, 2*i+1-vshift] = epsq2 *2
                 end
-                B[2*cellnumber+vshift, 1] = epsq2 *2
+                im_B[2*cellnumber+vshift, 1] = epsq2 *2
             end
         end
     elseif fluxtype == "altrl"
@@ -498,25 +607,71 @@ function flux_terms_telegraph!(B, setup, deg; fluxtype = "altlr")
             # auf rho wirkende Terme
             if i <= cellnumber
                 #gelb
-                B[2*i-1, 2*i-1+vshift] = -1/2 *2
+                ex_B[2*i-1, 2*i-1+vshift] = -1/2 *2
                 #braun
                 if i != cellnumber
-                    B[2*i, 2*i+1+vshift] = 1/2 *2
+                    ex_B[2*i, 2*i+1+vshift] = 1/2 *2
                 end
-                B[2*cellnumber, 1+vshift] = 1/2 *2
+                ex_B[2*cellnumber, 1+vshift] = 1/2 *2
             # auf j wirkende Terme
             else
                 # orange/lila
                 if i != 1 + cellnumber
-                    B[2*i-1, 2*(i-1)-vshift] = -epsq2 *2
+                    im_B[2*i-1, 2*(i-1)-vshift] = -epsq2 *2
                 end
-                B[1+vshift, 2*cellnumber] = -epsq2 *2
+                im_B[1+vshift, 2*cellnumber] = -epsq2 *2
                 #rot
-                B[2*i, 2*i-vshift] = epsq2 *2
+                im_B[2*i, 2*i-vshift] = epsq2 *2
             end
         end
     else
         println("No numerical flux chosen! Therefore, B=0")
     end
-    return B
+    return ex_B, im_B
+end
+
+
+function flux_terms_telegraph_DoD!(ex_B, im_B, setup, deg; fluxtype = "altlr")
+    cellnumber = setup["cellnumber"]
+    epsilon = setup["epsilon"]
+    eps2 = 1/(2*epsilon)
+    epsq2 = 1/(2*epsilon^2)
+    v = setup["v"]
+    a = setup["a"]
+    t_d = setup["t_d"]
+    h = setup["h"]
+    fix_eta = setup["fix_eta"]
+    c = setup["c"]
+    vshift = 2*cellnumber
+    ex_B_J0 = zeros(size(ex_B))
+    ex_B_J0E1 = zeros(size(ex_B))
+    ex_B_J0E2 = zeros(size(ex_B))
+    im_B_J0 = zeros(size(im_B))
+    im_B_J0E1 = zeros(size(im_B))
+    im_B_J0E2 = zeros(size(im_B))
+    for i in 1:cellnumber
+        if 2*(v[i+1]-v[i])/h<1
+            if fix_eta == false
+                eta = 1-minimum([1/(2*deg+1)*(v[i+1]-v[i])/((t_d[2]-t_d[1])*a), 1.0])
+            else
+                eta = 1-minimum([(v[i+1]-v[i])/h*1/c, 1.0])
+            end
+            if fluxtype == "altlr"
+            # auf rho wirkende Terme
+                ex_B_J0[2*i, 2*i + vshift] = -1 * eta
+                ex_B_J0[2*i + 1, 2*i + vshift] = 1 * eta
+                ex_B_J0E1[2*i, 2*i + vshift] = 1 * eta
+                ex_B_J0E2[2*i + 1, 2*i + 1 + vshift] = -1 * eta
+            # auf j wirkende Terme
+                k = cellnumber + i
+                im_B_J0[2*k - 1, 2*k - 1 - vshift] = epsq2 *2 * eta
+                im_B_J0[2*k - 2, 2*k - 1 - vshift] = -epsq2 *2 * eta
+                im_B_J0E1[2*k - 1, 2*k - 1 - vshift] = -epsq2 *2 * eta
+                im_B_J0E2[2*k - 2, 2*k - 2 - vshift] = epsq2 *2 * eta
+            else
+                throw(ArgumentError("DoD not implemented for that flux yet"))
+            end
+        end
+    end
+    return ex_B_J0, ex_B_J0E1, ex_B_J0E2, im_B_J0, im_B_J0E1, im_B_J0E2
 end
