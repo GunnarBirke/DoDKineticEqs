@@ -19,3 +19,6 @@ for i in range(1,size(A)[1])
     end
 end
 show(stdout, "text/plain",C)
+
+display(eigvals(C+C'))
+#show(stdout, "text/plain",C+C')

@@ -1,20 +1,21 @@
 include("upwindSPB_test.jl")
 
 IBP, sym, eigenvalues, problem, splitRHS = upwindSBP_test( N = 2^3, 
-                                        deg = 2, 
+                                        deg = 1, 
                                         epsilon = 0.5, 
                                         basis = GaussLegendre, 
                                         c = 0.4,
-                                        ext_test_func = false,
+                                        ext_test_func = true,
                                         digit_tolerance = 12, 
-                                        alphas = [0.2],
+                                        alphas = [0.01, 0.2],
                                         print_result = true);
 
 #round.(IBP, digits = 12)#+round.(IBP, digits = 12)'
 #display(splitRHS["Mh"]*splitRHS["Dplus"])
 #display(splitRHS["Dminus"]*splitRHS["Mh"])
 
-IBP;
+display(round.(IBP, digits = 14));
+eigvals(IBP+IBP')
 
 # check, how the single operators evolve to the result
 #=
@@ -48,6 +49,12 @@ for i in 1:dim_s
     for j in 1:dim_s 
         IBP_sumrow[i] += IBP[i, j] 
     end
+    if round(IBP[i], digits = 14) > 0
+        println("Row $(i): Value = $(IBP[i])")
+    end
 end
-display(IBP_sumrow)
+#display(IBP_sumrow)
 =#
+norm_mat = splitRHS["Mh"]*splitRHS["Dminus"]
+
+eigvals(norm_mat + norm_mat');

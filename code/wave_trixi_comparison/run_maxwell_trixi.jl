@@ -1,12 +1,13 @@
 using OrdinaryDiffEq
 using Trixi
+using LinearAlgebra
 
 ###############################################################################
 # semidiscretization of the linear advection equation
 
-equations = MaxwellEquations1D(1/0.9)
+equations = MaxwellEquations1D(1)
 
-solver = DGSEM(polydeg = 0, surface_flux = flux_hll)
+solver = DGSEM(polydeg = 2, surface_flux = flux_hll)
 
 coordinates_min = 0.0
 coordinates_max = 1.0
