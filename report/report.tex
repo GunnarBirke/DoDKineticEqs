@@ -1,0 +1,87 @@
+\documentclass[]{article}
+
+\usepackage{geometry}
+\geometry{a4paper, left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\usepackage{amsmath}
+\usepackage{stmaryrd}
+\usepackage{cases}
+\usepackage{tikz}
+\usepackage{tikz-cd}
+
+\newcommand*{\llbraces}{\{\mskip-5mu\{}
+\newcommand*{\rrbraces}{\}\mskip-5mu\}}
+
+\usepackage{enumitem}
+\setlist{nosep}
+
+\newcommand{\Gunnar}[1]{\textcolor{violet}{G: }\textcolor{violet}{#1}}  
+
+\usepackage{bibentry}
+\nobibliography*
+
+%opening
+\title{}
+\author{}
+\date{}
+
+\begin{document}
+\section*{Cut Cell Discretization of Linear Kinetic Models:\\ Project report 07-2025 (Gunnar Birke, Sigrun Ortleb, Louis Petri)}
+
+
+The aim of this project is to extend the Domain of Dependence (DoD) stabilization to systems with stiff relaxation.  A typical example of this is the telegraph equation
+\begin{equation}
+\begin{split}
+	\rho_t + j_x & = 0\\
+	j_t + \frac{1}{\epsilon^2}\rho_x & = -\frac{1}{\epsilon^2} j
+\end{split}
+\end{equation}
+with the heat equation being the asymptotic limit.
+In this project, we want to consider this telegraph equation in one spatial dimension. We construct a grid with multiple arbitrary small cells, and start with a base DG scheme, following \cite{Jang}.
+Dealing with the cut cell problem by applying DoD is not straight forward. Several important questions arise now:
+\vspace{\baselineskip}
+\begin{itemize}
+\item Space discretization: the choice of the DG discretization of the system with the stiff parameter $\epsilon$ and the limit system/the numerical fluxes
+\item Time discretization
+\item DoD application
+\item Asymptotic properties
+\begin{itemize}
+\item Do we formally approach the limit equation in the presence of cut cells and the DoD stablization
+\item is the time-step restriction independent of  $\epsilon$?
+\end{itemize}
+\item Small cell related problems:
+\begin{itemize}
+	\item Do we receive a time step, that is independent of the small cell?
+\end{itemize}
+\item Can we prove $L^2$-stability?
+\end{itemize}
+\vspace{\baselineskip}
+For that, we implemented several versions to solve this equation numerically:
+\begin{itemize}
+	\item For the space discretization, we applied alternating left or right fluxes (corresponding to LDG in the limit), central fluxes (corresponding to BR1 in the limit)
+	and a flux, based on eigenvalue decomposition of the flux matrix (here, we are not sure for now, if there is a limit and how exactly this limit equation would look like).
+	\item For the time discretization, we applied a big part of the existing RK methods, i.e. Type A/Type CK ImEx RK methods, GSA or not GSA and explicit RK methods
+	 that do or no not fulfill the imaginary interval condition
+	\item DoD method in several ways, which we call for now standard (applicable for every case), central, and symmetrized upwind
+\end{itemize}
+Most of the possible combinations provide stable simulations that are stable, if and only if the DoD stabilization is applied. 
+A theoretical challenge is given by proving an $L^2$ stability result for the  spatial discretization, which motivated us to look it these many different cases.
+
+For that, we want to use the SBP framework. It turned out, that we require to adapt the DoD formulation to achieve that. 
+
+Along that path, we were already able to formulate of DoD that result in an SBP operator and $L^2$ stability a novel central version. 
+As this leads to a BR1 discretization for the limit equation, we want to formulate a version, that leads to an LDG discretization in the limit.
+Therefore, we hope to adapt the method further to gain Upwind SBP operators. 
+With that done, we would also achieve an $L^2$ stability result using upwind fluxes.
+
+We remark, that addressing this problem with the SBP framework does not only serve for analyzing the telegraph equation, but also contributes to achieve entropy stability results, which are part of the ESCut project.
+
+We are convinced, that the current results and our remaining work on this topic will provide some now and interesting results, that will lead to a publication.
+Yet, we did not have any specific discussions about that. We plan to do have that soon.
+
+\bibliographystyle{alpha}
+\bibliography{sources.bib}
+
+\end{document}
+
+
