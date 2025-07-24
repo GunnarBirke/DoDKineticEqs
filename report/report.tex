@@ -47,7 +47,7 @@ Dealing with the cut cell problem by applying DoD is not straight forward. Sever
 \item Asymptotic properties
 \begin{itemize}
 \item Do we formally approach the limit equation in the presence of cut cells and the DoD stablization
-\item is the time-step restriction independent of  $\epsilon$?
+\item How does the time step size on  $\epsilon$?
 \end{itemize}
 \item Small cell related problems:
 \begin{itemize}
@@ -64,20 +64,20 @@ For that, we implemented several versions to solve this equation numerically:
 	 that do or no not fulfill the imaginary interval condition
 	\item DoD method in several ways, which we call for now standard (applicable for every case), central, and symmetrized upwind
 \end{itemize}
-Most of the possible combinations provide stable simulations that are stable, if and only if the DoD stabilization is applied. 
-A theoretical challenge is given by proving an $L^2$ stability result for the  spatial discretization, which motivated us to look it these many different cases.
+Most of the possible combinations lead to simulation results that are stable, if and only if the DoD stabilization is applied.
+A theoretical challenge is given by proving an $L^2$ stability result for the  spatial discretization, which motivated us to consider these different settings.
 
-For that, we want to use the SBP framework. It turned out, that we require to adapt the DoD formulation to achieve that. 
+As a general strategy we plan to use the usual SBP framework. To directly apply this an adaption of the DoD method is necessary. So far we were able to formulate a variant of the DoD method with central fluxes that leads to an SBP operator for the linear advection equation and thus energy conservation.
 
-Along that path, we were already able to formulate of DoD that result in an SBP operator and $L^2$ stability a novel central version. 
-As this leads to a BR1 discretization for the limit equation, we want to formulate a version, that leads to an LDG discretization in the limit.
-Therefore, we hope to adapt the method further to gain Upwind SBP operators. 
-With that done, we would also achieve an $L^2$ stability result using upwind fluxes.
+As this eventually leads to a BR1 discretization for the limit equation, we want to formulate a version that leads to an LDG discretization in the limit.
+Therefore, we hope to adapt the method further to gain upwind SBP operators and a corresponding $L^2$ stability result.
 
-We remark, that addressing this problem with the SBP framework does not only serve for analyzing the telegraph equation, but also contributes to achieve entropy stability results, which are part of the ESCut project.
+%We remark, that addressing this problem with the SBP framework does not only serve for analyzing the telegraph equation, but also contributes to achieve entropy stability results, which are part of the ESCut project.
 
-We are convinced, that the current results and our remaining work on this topic will provide some now and interesting results, that will lead to a publication.
-Yet, we did not have any specific discussions about that. We plan to do have that soon.
+While as of now we do not work towards a concrete article, we are convinced to achieve interesting results leading to a future publication.
+
+%We are convinced, that the current results and our remaining work on this topic will provide some now and interesting results that will lead to a publication.
+%Yet, we did not have any specific discussions about that. We plan to do have that soon.
 
 \bibliographystyle{alpha}
 \bibliography{sources.bib}
