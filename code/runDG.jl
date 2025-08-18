@@ -5,33 +5,37 @@ include("functionsRK.jl")
 include("IMEX_solve_extern.jl")
 
 #### set up problem
-N = 2^3
+N = 2^4
 Tmax = 3.0
 deg = 1
 epsilon = 0.5
 CFL = epsilon*0.5/N
-#id_set = ("telegraph","telsin", -pi, pi) # inital condition/domain set
-#id_set = ("telegraph","eq_data", 0, pi) # inital condition/domain set
-id_set = ("wave", "sin", 0, 1) # inital condition/domain set
+fluxtype = "upwind_diss_symm"
+# choose initial condition/domain set
+#id_set = ("telegraph","telsin", -pi, pi)
+#id_set = ("telegraph","eq_data", 0, pi)
+#id_set = ("wave", "sin", 0, 1)
+id_set = ("transport", "sin", 0, 1) 
 TMM = ImExEuler # Just for IMEX extern solver needed
 problem = setup_problem_eq(id_set[2], id_set[3], id_set[4], N, Tmax = Tmax, a = 1.0, CFL = CFL, bcs = "periodic", epsilon = epsilon);
 #
 problem = include_cut_cell(problem, 0.001, 3);
-problem = include_cut_cell(problem, 0.1, 7);
+problem = include_cut_cell(problem, 0.4, 7);
 problem = include_cut_cell(problem, 0.0000001, 10);
-#problem = include_cut_cell(problem, 0.3, 14);
+problem = include_cut_cell(problem, 0.1, 14);
 #
-
 #### discretize in space
-RHS_mat, problem, splitRHS = DGsemidiscretization_DoD_telegraph(problem, deg, GaussLegendre, "Upwind",  do_stabilize = true, fix_eta = true, c = 0.1, fluxtype = "full", include_b_h = true, eq_type = id_set[1]);
+RHS_mat, problem, splitRHS = DGsemidiscretization_DoD_telegraph(problem, deg, GaussLegendre, "Upwind",  do_stabilize = true, fix_eta = true,
+                                                                 c = 0.4, fluxtype = fluxtype, include_b_h = true, eq_type = id_set[1], ext_test_func = true);
 ex_RHS_mat = problem["ex_RHS_mat"]
 im_RHS_mat = problem["im_RHS_mat"]
 
-
+display(eigvals(problem["M"]*RHS_mat + (problem["M"]*RHS_mat)'))
+vscodedisplay(RHS_mat)
 tspan = [0.0,Tmax];
 x_d = problem["x_d"];
 u0 = problem["u0"]
-
+Nx_plot = determine_Nx_plot(problem)
 #=
 # Extern explicit solvers
 function A!(du, u, p, t)
@@ -69,11 +73,10 @@ u_exact = problem["u_exact"]
 
 # intern arbitrary
 Tableau = get_RK_tableau("ARS3")
-sol, u_exact = ImEx(problem, RHS_mat, Tableau)
-#sol, u_exact = SSPRK3(problem, RHS_mat)
-
+#sol, u_exact = ImEx(problem, RHS_mat, Tableau, only_explicit = false)
+sol, u_exact = SSPRK3(problem, RHS_mat)
 #t_vec=range(first(tspan), last(tspan), length = tsteps)
-full_sol = sol[1:Int(size(sol)[1]/2), :] .+sol[Int(size(sol)[1]/2+1):size(sol)[1], :]*epsilon
+full_sol = sol[1:(size(sol)[1]÷ 2), :] .+sol[Int(size(sol)[1]÷2+1):size(sol)[1], :]*epsilon
 
 # plots:
 # plot rho
@@ -90,28 +93,28 @@ plot(camera = (230, 35), xlabel = "t", ylabel = "x")
 #vizualize(full_sol, x_d, problem["t_d"], clabel = "full", u_exact = u_exact[1:Int(size(u_exact)[1]/2), :] .+ u_exact[Int(size(u_exact)[1]/2+1):size(u_exact)[1], :]*epsilon)
 
 # 1. component
-#vizualize(sol[1:Int(size(sol)[1]/2), :], x_d, problem["t_d"], clabel = "rho", u_exact = u_exact[1:Int(size(u_exact)[1]/2), :])
+#vizualize(sol[1:Nx_plot, :], x_d, problem["t_d"], clabel = "rho", u_exact = u_exact[1:Nx_plot, :], steplim = 500)
 
 # 2. component
-#vizualize(sol[Int(size(sol)[1]/2)+1:size(sol)[1], :], x_d, problem["t_d"], clabel = "g", u_exact = u_exact[Int(size(u_exact)[1]/2)+1:size(u_exact)[1], :])
+#vizualize(sol[Nx_plot+1:size(sol)[1], :], x_d, problem["t_d"], clabel = "g", u_exact = u_exact[Int(size(u_exact)[1]/2)+1:size(u_exact)[1], :])
 
 
 ########################### plot at a fixed timestep t_dest ###########################
-#=
-t_dest = size(sol)[2]
+#
+t_dest = 2#size(sol)[2]-1000
 
 #full solution
 #plot(x_d, u_exact[1:Int(size(u_exact)[1]/2), t_dest] .+ epsilon*u_exact[Int(size(u_exact)[1]/2+1):size(u_exact)[1], t_dest], label = "exact")
 #plot!(x_d, full_sol[:, t_dest], linestyle = :dash, label = "approx")
 #
 # 1. component
-plot(x_d, u_exact[1:Int(size(u_exact)[1]/2), t_dest] , label = "exact")
-plot!(x_d, sol[1:Int(size(sol)[1]/2), t_dest], linestyle = :dash, label = "approx")
+plot(x_d, u_exact[1:Nx_plot, t_dest] , label = "exact")
+plot!(x_d, sol[1:Nx_plot, t_dest], linestyle = :dash, label = "approx", title = "t = $(problem["t_d"][t_dest])")
 #
 # 2. component
 #plot(x_d, u_exact[Int(size(u_exact)[1]/2+1):size(u_exact)[1], t_dest], label = "exact")
-#plot!(x_d, sol[Int(size(sol)[1]/2)+1:size(sol)[1], t_dest], linestyle = :dash, label = "approx")
-=#
+#plot!(x_d, sol[Nx_plot+1:size(sol)[1], t_dest], linestyle = :dash, label = "approx")
+#
 
 
 
@@ -153,4 +156,49 @@ SBP_C = SBP_C
 Mat = problem["M"]*RHS_mat + (problem["M"]*RHS_mat)'
 display(eigvals(Mat))
 =#
-splitRHS["im_B_J0E2"]
+
+#display((splitRHS["ex_B"] +  splitRHS["im_B"])[4:7, 4:7])
+#display((splitRHS["ex_B_J0"] + splitRHS["im_B_J0"])[4:7, 4:7])
+#display((splitRHS["ex_B_J0E1"] + splitRHS["im_B_J0E1"])[4:7, 4:7])
+#display((splitRHS["ex_B_J0E2"] + splitRHS["im_B_J0E2"])[4:7, 4:7])
+#splitRHS["im_V_J0E1"]
+#splitRHS["im_V_J0E2"] = im_V_J0E2
+
+#=
+#display(splitRHS["TranspV"]*(splitRHS["ex_B"]+splitRHS["im_B"])*splitRHS["V"])
+q1 = 1:18
+#q1 = 19:36
+q2 = 1:18
+#q2 = 19:36
+
+display(splitRHS["VOLTERMS"][q1, q2])
+display((-splitRHS["Sc"]*splitRHS["invM"]*(splitRHS["TranspV"]*(splitRHS["ex_B"]+splitRHS["im_B"])*splitRHS["V"] +splitRHS["TranspV"]*(splitRHS["ex_B_J0"]+splitRHS["im_B_J0"])*splitRHS["V"]
+    +splitRHS["TranspV"]*(splitRHS["ex_B_J0E1"])*splitRHS["ex_V_J0E1"]+splitRHS["TranspV"]*(splitRHS["im_B_J0E1"])*splitRHS["im_V_J0E1"]
+    +splitRHS["TranspV"]*(splitRHS["ex_B_J0E2"])*splitRHS["ex_V_J0E2"]+splitRHS["TranspV"]*(splitRHS["im_B_J0E2"])*splitRHS["im_V_J0E2"]))[q1, q2])
+display(RHS_mat[q1, q2])
+display(maximum(abs.(RHS_mat)))
+=#
+
+
+#=
+#q1 = 1:20
+q1 = 21:40
+#q2 = 1:20
+q2 = 21:40
+display(splitRHS["ex_V_J0E1"][q1, q2])
+=#
+#display(splitRHS["Dminus"])
+#display(splitRHS["Dplus"])
+#display(problem["x_d"])
+#=
+println("Dminflux")
+display( -splitRHS["Dminusflux"])
+println("Dminvol")
+display( -splitRHS["Dminusvol"])
+println("Dplusflux")
+display( -splitRHS["Dplusflux"])
+println("Dplusvol")
+display( -splitRHS["Dplusvol"])
+=#
+#display(splitRHS["symm_DM_J1"])
+#display(RHS_mat)

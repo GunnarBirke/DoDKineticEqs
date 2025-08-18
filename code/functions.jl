@@ -96,6 +96,9 @@ function get_exact_solution(setup)
             r = -1
             u_tel_exact = zeros((deg+1)*N, length(t_d));
             u_tel_exact[1:(deg+1)*N, :] = [1/r*exp(r*t)*sin(x) for x in x_d, t in t_d];
+        elseif eq_type == "transport"
+            u_exact = [u0_eval(to_periodic(x-(a*(t)))) for x in x_d, t in t_d]
+            return u_exact
         else
             println("wrong eq type")
         end
@@ -182,7 +185,12 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
     ### Telegraph parameters
     epsilon = setup["epsilon"]
     # fixed
-    a = 1
+    if eq_type == "telegraph" || eq_type == "wave"
+        if a != 1.0
+            println("Caution! Parameter a = $(a) is artificially set to 1")
+        end
+        a = 1
+    end
     setup["bcs"] = "periodic"
 
     splitRHS = Dict()
@@ -198,7 +206,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
         if j < xrange/2
             a*2/(v[i+1]-v[i])
         else
-            2/(v[i+1]-v[i])
+            a*2/(v[i+1]-v[i])
         end
     end
     shift(i) = (v[i+1]+v[i])/2
@@ -244,7 +252,14 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
 
     TranspV = zeros(T, xrange, cellnumber*4)
     Sc = zeros(T, xrange, xrange)
-    
+
+    # initialize symmetic volume terms for the advetion equation
+    xdim_adv = Int(xrange/2)
+    symm_DM_J1 = zeros(xdim_adv, xdim_adv)
+    symm_DM_J1_upwind = zeros(xdim_adv, xdim_adv)
+    diss_DM_J1_central = zeros(xdim_adv, xdim_adv)
+    diss_DM_J1_diss = zeros(xdim_adv, xdim_adv)
+
     # Creating Transformation Matrix from reference element to real elements
     for i in 1:2*cellnumber
         Sc[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i-1) + 1:(deg+1)*i] = diagm(ones(T, deg+1)*invscale(mymod(i, cellnumber),i))
@@ -305,7 +320,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
         if do_stabilize
             if i < cellnumber
                 if 2*(v[i+1]-v[i])/h<1
-                    if fluxtype == "altlr"
+                    if fluxtype == "altlr" || eq_type == "transport"
                          # cell - 1 is inflow cell, therefore construct basis1 on cell - 1
                         for j in 1:deg+1
                             basis1.nodes[j] = x_d[(deg+1)*(i-2) + j] 
@@ -350,7 +365,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
                         im_V_J0E1[2*i-1 + 2*cellnumber, (deg+1)*(cellnumber + (i)) + 1:(deg+1)*(cellnumber + (i+1))] = interpolation_matrix(v[i], basis1)
                         im_V_J0E2[2*i-2 + 2*cellnumber, (deg+1)*(cellnumber + (i)) + 1:(deg+1)*(cellnumber + (i+1))] = interpolation_matrix(v[i], basis1)
                         #bzgl. implizit, grün
-                        im_V_J0E1[2*i-1, (deg+1)*i + 1:(deg+1)*(i+1)] = interpolation_matrix(v[i], basis1) 
+                        im_V_J0E1[2*i-1, (deg+1)*i + 1:(deg+1)*(i+1)] = interpolation_matrix(v[i], basis1)
                         im_V_J0E2[2*i-2, (deg+1)*i + 1:(deg+1)*(i+1)] = interpolation_matrix(v[i], basis1)
                     end
                     # ACHTUNG!! Neben den im_VJ0E1/im_VJ0E2 termen ist es auch wichtig nochmal auf den Term zu schauen, der uns gerade die Domain-of-Dependence in der 2. Komponente erweitert,
@@ -381,43 +396,196 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
                 end
                 # Volume Term
                 if deg>0
-                    ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                    basisleft=nodes(deg)
+                    basisright=nodes(deg)
+                    for j in 1:deg+1
+                        basisleft.nodes[j] = x_d[(deg+1)*(i-2) + j] 
+                        basisright.nodes[j] = x_d[(deg+1)*(i) + j] 
+                    end
+                    Vol_interpol_left = interpolation_matrix(x_d[(deg+1)*(i-1) + 1:(deg+1)*(i)] , basisleft)
+                    Vol_interpol_right = interpolation_matrix(x_d[(deg+1)*(i-1) + 1:(deg+1)*(i)] , basisright)
+                    if fluxtype == "altlr" || (eq_type == "transport" && (fluxtype == "central_classic" || fluxtype == "upwind"))
+                        # flux to right
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
                         - basis.D' * diagm(basis.weights) * eta
-                    
-                    basis2=nodes(deg)
-                    for j in 1:deg+1
-                        # Inserting these nodes into the structure basis2, to adapt the field basis1.interp_matrix to the used nodes.
-                        basis2.nodes[j] = x_d[(deg+1)*(i-2) + j] 
-                    end
-                    Vol_interpol = interpolation_matrix(x_d[(deg+1)*(i-1) + 1:(deg+1)*(i)] , basis2)
-                    ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*(i), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
-                        + basis.D' * diagm(basis.weights) * Vol_interpol * eta
-                    # Extra-Stabilityterm with the extended test-function (L_E_in(u_h)-u_h)*L_E_in(v_h)
-                    if ext_test_func == true
-                        ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
-                            Vol_interpol' *  basis.D' * diagm(basis.weights) * eta
-                        ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
-                            - Vol_interpol' * basis.D' * diagm(basis.weights) * Vol_interpol * eta
-                    end
-
-
-                    im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i-1) + 1:(deg+1)*i] +=
-                        - basis.D' * diagm(basis.weights) * eta /(epsilon^2)
-                    
-                    basis2=nodes(deg)
-                    for j in 1:deg+1
-                        # Inserting these nodes into the structure basis2, to adapt the field basis1.interp_matrix to the used nodes.
-                        basis2.nodes[j] = x_d[(deg+1)*(i) + j] 
-                    end
-                    Vol_interpol = interpolation_matrix(x_d[(deg+1)*(i-1) + 1:(deg+1)*(i)] , basis2)
-                    im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
-                        + basis.D' * diagm(basis.weights) * Vol_interpol * eta /(epsilon^2)
-                    # Extra-Stabilityterm with the extended test-function (L_E_in(u_h)-u_h)*L_E_in(v_h)
-                    if ext_test_func == true
-                        im_DM_J1[(deg+1)*(cellnumber + (i)) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(i-1) + 1:(deg+1)*i] +=
-                            Vol_interpol' *  basis.D' * diagm(basis.weights) * eta /(epsilon^2)
-                        im_DM_J1[(deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
-                            - Vol_interpol' * basis.D' * diagm(basis.weights) * Vol_interpol * eta /(epsilon^2)
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*(i), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
+                            + basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                        # flux to left
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                            - basis.D' * diagm(basis.weights) * eta /(epsilon^2) 
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
+                            + basis.D' * diagm(basis.weights) * Vol_interpol_right * eta /(epsilon^2)
+                        # extra stability terms
+                        if ext_test_func == true
+                            # flux to right
+                            ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                            Vol_interpol_left' *  basis.D' * diagm(basis.weights) * eta
+                            ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
+                                - Vol_interpol_left' * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                            # flux to left
+                            im_DM_J1[(deg+1)*(cellnumber + (i)) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                            Vol_interpol_right' *  basis.D' * diagm(basis.weights) * eta /(epsilon^2)
+                            im_DM_J1[(deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
+                                - Vol_interpol_right' * basis.D' * diagm(basis.weights) * Vol_interpol_right * eta /(epsilon^2)
+                        end
+                    elseif fluxtype == "full"
+                        # explicit 
+                        # pink
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                            - 1/2 * basis.D' * diagm(basis.weights) * eta
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*(i), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
+                            + 1/2 * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                        # rot
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                            - 1/(2*epsilon) * basis.D' * diagm(basis.weights) * eta
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*(i), (deg+1)*(i-2) + 1:(deg+1)*(i-1)] += 
+                            + 1/(2*epsilon) * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                        # gelb
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                            - 1/2 * basis.D' * diagm(basis.weights) * eta  
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1))] += 
+                            + 1/2 * basis.D' * diagm(basis.weights) * Vol_interpol_right * eta 
+                        # grün
+                        # sign flip, because the flux direction of this component is contrary to the actual flux,
+                        # and therefore also the stabilization
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                            + 1/(2*epsilon) * basis.D' * diagm(basis.weights) * eta  
+                        ex_DM_J1[(deg+1)*(i-1) + 1:(deg+1)*i, (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
+                            - 1/(2*epsilon) * basis.D' * diagm(basis.weights) * Vol_interpol_right * eta 
+                        # implicit
+                        # grün
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                            - 1/(2*epsilon^2) * basis.D' * diagm(basis.weights) * eta 
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
+                            + 1/(2*epsilon^2) * basis.D' * diagm(basis.weights) * Vol_interpol_right * eta
+                        # gelb
+                        # sign flip, because the flux direction of this component is contrary to the actual flux,
+                        # and therefore also the stabilization
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                            + 1/(2*epsilon) *  basis.D' * diagm(basis.weights) * eta
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1))] += 
+                            - 1/(2*epsilon) *  basis.D' * diagm(basis.weights) * Vol_interpol_right * eta
+                        # pink
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                            - 1/(2*epsilon) * basis.D' * diagm(basis.weights) * eta
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
+                            + 1/(2*epsilon) * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                        # rot
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                            - 1/(2*epsilon^2) * basis.D' * diagm(basis.weights) * eta
+                        im_DM_J1[(deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i), (deg+1)*(i-2) + 1:(deg+1)*(i-1)] += 
+                            + 1/(2*epsilon^2) * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                        # extra stability terms
+                        if ext_test_func == true
+                            # explicit
+                            # pink
+                            ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                                + 1/2 * Vol_interpol_left' *  basis.D' * diagm(basis.weights) * eta
+                            ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
+                                - 1/2 * Vol_interpol_left' * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                            # rot
+                            ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                                + 1/(2*epsilon) * Vol_interpol_left' *  basis.D' * diagm(basis.weights) * eta
+                            ex_DM_J1[(deg+1)*(i-2) + 1:(deg+1)*(i-1), (deg+1)*(i-2) + 1:(deg+1)*(i-1)] += 
+                                - 1/(2*epsilon) * Vol_interpol_left' * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                            # gelb
+                            ex_DM_J1[(deg+1)*i + 1:(deg+1)*(i+1), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                                + 1/2 * Vol_interpol_right' *  basis.D' * diagm(basis.weights) * eta 
+                            ex_DM_J1[(deg+1)*i + 1:(deg+1)*(i+1), (deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1))] += 
+                                - 1/2 * Vol_interpol_right' * basis.D' * diagm(basis.weights) * Vol_interpol_right * eta
+                            # grün
+                            # sign flip, because the flux direction of this component is contrary to the actual flux,
+                            # and therefore also the stabilization
+                            ex_DM_J1[(deg+1)*i + 1:(deg+1)*(i+1), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                                - 1/(2*epsilon) * Vol_interpol_right' *  basis.D' * diagm(basis.weights) * eta  
+                            ex_DM_J1[(deg+1)*i + 1:(deg+1)*(i+1), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
+                                + 1/(2*epsilon) * Vol_interpol_right' * basis.D' * diagm(basis.weights) * Vol_interpol_right * eta
+                            # implicit
+                            # grün
+                            im_DM_J1[(deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                                + 1/(2*epsilon^2) * Vol_interpol_right' *  basis.D' * diagm(basis.weights) * eta
+                            im_DM_J1[(deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(i) + 1:(deg+1)*(i+1)] += 
+                                - 1/(2*epsilon^2) * Vol_interpol_right' * basis.D' * diagm(basis.weights) * Vol_interpol_right * eta
+                            # gelb
+                            # sign flip, because the flux direction of this component is contrary to the actual flux,
+                            # and therefore also the stabilization
+                            im_DM_J1[(deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                                - 1/(2*epsilon) *  Vol_interpol_right' *  basis.D' * diagm(basis.weights) * eta
+                            im_DM_J1[(deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1)), (deg+1)*(cellnumber + i) + 1:(deg+1)*(cellnumber + (i+1))] += 
+                                + 1/(2*epsilon) * Vol_interpol_right' * basis.D' * diagm(basis.weights) * Vol_interpol_right * eta
+                            # pink
+                            im_DM_J1[(deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1)), (deg+1)*(cellnumber + (i-1)) + 1:(deg+1)*(cellnumber + i)] +=
+                                + 1/(2*epsilon) * Vol_interpol_left' *  basis.D' * diagm(basis.weights) * eta
+                            im_DM_J1[(deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1)), (deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1))] += 
+                                - 1/(2*epsilon) * Vol_interpol_left' * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                            # rot
+                            im_DM_J1[(deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1)), (deg+1)*(i-1) + 1:(deg+1)*i] +=
+                                + 1/(2*epsilon^2) * Vol_interpol_left' *  basis.D' * diagm(basis.weights) * eta
+                            im_DM_J1[(deg+1)*(cellnumber + (i-2)) + 1:(deg+1)*(cellnumber + (i-1)), (deg+1)*(i-2) + 1:(deg+1)*(i-1)] += 
+                                - 1/(2*epsilon^2) * Vol_interpol_left' * basis.D' * diagm(basis.weights) * Vol_interpol_left * eta
+                        end
+                    elseif (eq_type == "transport" && fluxtype == "central_symm")
+                        # argument for c: 
+                        ac = (deg+1)*(i-1) + 1:(deg+1)*i
+                        # argument for L:
+                        aL = (deg+1)*(i-2) + 1:(deg+1)*(i-1)
+                        # argument for R: 
+                        aR = (deg+1)*i + 1:(deg+1)*(i+1)
+                        # to get on the right hand-side: *-1 and because of centralized version a factor 1/2, and of course the stabilizting factor eta
+                        stab_fac = (-1) * 1/2 * eta
+                        symm_DM_J1[ac, ac] += 2*basis.D' * diagm(basis.weights) * stab_fac
+                        symm_DM_J1[ac, aR] +=  - basis.D' * diagm(basis.weights) * Vol_interpol_right * stab_fac
+                        symm_DM_J1[ac, aL] +=  - basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                        if ext_test_func == true
+                            symm_DM_J1[aL, aR] += Vol_interpol_left' *  basis.D' * diagm(basis.weights) * Vol_interpol_right * stab_fac
+                            symm_DM_J1[aL, ac] += - Vol_interpol_left' *  basis.D' * diagm(basis.weights) * stab_fac
+                            symm_DM_J1[aR, aL] += Vol_interpol_right' *  basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                            symm_DM_J1[aR, ac] += - Vol_interpol_right' *  basis.D' * diagm(basis.weights) * stab_fac
+                        end
+                    elseif (eq_type == "transport" && fluxtype == "upwind_symm")
+                        # argument for c: 
+                        ac = (deg+1)*(i-1) + 1:(deg+1)*i
+                        # argument for L:
+                        aL = (deg+1)*(i-2) + 1:(deg+1)*(i-1)
+                        # argument for R: 
+                        aR = (deg+1)*i + 1:(deg+1)*(i+1)
+                        # to get on the right hand-side: *-1 and because of centralized version a factor 1/2, and of course the stabilizting factor eta
+                        stab_fac = (-1) * 1/2 * eta
+                        symm_DM_J1_upwind[ac, aL] += -2 * basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                        symm_DM_J1_upwind[ac, ac] += 2 * basis.D' * diagm(basis.weights) * stab_fac
+                        if ext_test_func == true
+                            symm_DM_J1_upwind[aR, aL] += Vol_interpol_right' * basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                            symm_DM_J1_upwind[aR, aR] += -Vol_interpol_right' * basis.D' * diagm(basis.weights) * Vol_interpol_right * stab_fac
+                            symm_DM_J1_upwind[aL, aL] += Vol_interpol_left' * basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                            symm_DM_J1_upwind[aL, ac] += -2*Vol_interpol_left' * basis.D' * diagm(basis.weights) * stab_fac
+                            symm_DM_J1_upwind[aL, aR] += Vol_interpol_left' * basis.D' * diagm(basis.weights) * Vol_interpol_right * stab_fac
+                        end
+                    elseif (eq_type == "transport" && fluxtype == "upwind_diss_symm")
+                        # argument for c: 
+                        ac = (deg+1)*(i-1) + 1:(deg+1)*i
+                        # argument for L:
+                        aL = (deg+1)*(i-2) + 1:(deg+1)*(i-1)
+                        # argument for R: 
+                        aR = (deg+1)*i + 1:(deg+1)*(i+1)
+                        # to get on the right hand-side: *-1 and because of centralized version a factor 1/2, and of course the stabilizting factor eta
+                        stab_fac = (-1) * 1/2 * eta
+                        diss_DM_J1_central[ac, ac] += 2*basis.D' * diagm(basis.weights) * stab_fac
+                        diss_DM_J1_central[ac, aR] +=  - basis.D' * diagm(basis.weights) * Vol_interpol_right * stab_fac
+                        diss_DM_J1_central[ac, aL] +=  - basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                        if ext_test_func == true
+                            diss_DM_J1_central[aL, aR] += Vol_interpol_left' *  basis.D' * diagm(basis.weights) * Vol_interpol_right * stab_fac
+                            diss_DM_J1_central[aL, ac] += - Vol_interpol_left' *  basis.D' * diagm(basis.weights) * stab_fac
+                            diss_DM_J1_central[aR, aL] += Vol_interpol_right' *  basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                            diss_DM_J1_central[aR, ac] += - Vol_interpol_right' *  basis.D' * diagm(basis.weights) * stab_fac
+                        end
+                        diss_DM_J1_diss[ac, aR] +=  basis.D' * diagm(basis.weights) * Vol_interpol_right * stab_fac
+                        diss_DM_J1_diss[ac, aL] += - basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                        if ext_test_func == true
+                            diss_DM_J1_diss[aR, ac] += Vol_interpol_right' *  basis.D' * diagm(basis.weights) * stab_fac
+                            diss_DM_J1_diss[aR, aR] += - Vol_interpol_right' *  basis.D' * diagm(basis.weights) * Vol_interpol_right * stab_fac
+                            diss_DM_J1_diss[aL, aL] += Vol_interpol_left' *  basis.D' * diagm(basis.weights) * Vol_interpol_left * stab_fac
+                            diss_DM_J1_diss[aL, ac] += - Vol_interpol_left' *  basis.D' * diagm(basis.weights) * stab_fac
+                        end
                     end
                 end
             end
@@ -427,11 +595,13 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
     # Constructing RHS Matrix
     invM = inv(M)
     Mh = inv(Sc[1:Int(xrange/2), 1:Int(xrange/2)])*M[1:Int(xrange/2), 1:Int(xrange/2)]
+    splitRHS["Dminus"] = -(Sc*invM*(-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM + ex_DM_J1))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
+    splitRHS["Dplus"] = -epsilon^2*(Sc*invM*(-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM + im_DM_J1))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]   
+    splitRHS["Dminusflux"] = -(Sc*invM*(-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2)))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
+    splitRHS["Dminusvol"] = -(Sc*invM*(ex_DM + ex_DM_J1))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
+    splitRHS["Dplusflux"] = -epsilon^2*(Sc*invM*(-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2)))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]
+    splitRHS["Dplusvol"] = -epsilon^2*(Sc*invM*(im_DM + im_DM_J1))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]
     if eq_type == "telegraph"
-        splitRHS["Dminus"] = -(Sc*invM*(-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM + ex_DM_J1))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
-        splitRHS["Dplus"] = -epsilon^2*(Sc*invM*(-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM + im_DM_J1))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]
-        splitRHS["Dminus2"] = -(Sc*invM*(-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM ))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
-        splitRHS["Dplus2"] = -epsilon^2*(Sc*invM*(-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]
         A = 1/(2*epsilon)*(splitRHS["Dplus"]-splitRHS["Dminus"])
         splitRHS["A"] = A
         if include_b_h == true
@@ -442,13 +612,49 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
 
         ex_RHS_mat = Sc*invM * (-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM + ex_DM_J1) -invM*ex_sM + ex_A
         im_RHS_mat = Sc*invM * (-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM + im_DM_J1) -invM*im_sM
-        RHS_mat = Sc*invM * (-TranspV* ((ex_B + im_B)*V + (ex_B_J0+im_B_J0)*V + ex_B_J0E1*ex_V_J0E1 + im_B_J0E1*im_V_J0E1 + ex_B_J0E2*ex_V_J0E2 + im_B_J0E2*im_V_J0E2) + (ex_DM+im_DM) + (ex_DM_J1 + im_DM_J1)) -invM*(ex_sM + im_sM) + ex_A
+        RHS_mat = Sc*invM * (-TranspV* ((ex_B + im_B)*V + (ex_B_J0+im_B_J0)*V + ex_B_J0E1*ex_V_J0E1 + im_B_J0E1*im_V_J0E1 + ex_B_J0E2*ex_V_J0E2 + im_B_J0E2*im_V_J0E2) + (ex_DM+im_DM) + (ex_DM_J1 + im_DM_J1)) - invM*(ex_sM + im_sM) + ex_A
     elseif eq_type == "wave"
         #Wave equation (choosing epsilon =1/c), not applicable for DoD here
         splitRHS["A"] = zeros(xrange, xrange)
         ex_RHS_mat = Sc*invM * (-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM + ex_DM_J1)
         im_RHS_mat = Sc*invM * (-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM + im_DM_J1)
         RHS_mat = Sc*invM * (-TranspV* ((ex_B + im_B)*V + (ex_B_J0+im_B_J0)*V + ex_B_J0E1*ex_V_J0E1 + im_B_J0E1*im_V_J0E1 + ex_B_J0E2*ex_V_J0E2 + im_B_J0E2*im_V_J0E2) + (ex_DM+im_DM) + (ex_DM_J1 + im_DM_J1))
+    elseif eq_type == "transport"
+        splitRHS["A"] = zeros(xrange, xrange)
+        if fluxtype == "upwind"
+            if a>0
+                RHS_mat = -splitRHS["Dminus"]
+            else
+                RHS_mat = -splitRHS["Dplus"]
+            end
+        elseif fluxtype == "central_classic"
+            RHS_mat = (-splitRHS["Dminus"]-splitRHS["Dplus"])/2
+        elseif fluxtype == "central_symm"
+            # standard flux + vol terms + dod flux terms for D^+ and D^- (to substitue just the DM_J1 Term)
+            D_min_central = (Sc*invM*(-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM ))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
+            D_plus_central = epsilon^2*(Sc*invM*(-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]  
+            RHS_mat = (Sc*invM)[1:xdim_adv, 1:xdim_adv]*(symm_DM_J1) + 1/2*(D_min_central + D_plus_central)
+        elseif fluxtype == "upwind_symm"
+            if a>0
+                D_upwind = (Sc*invM*(-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM ))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
+            else
+                D_upwind = epsilon^2*(Sc*invM*(-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]
+            end
+            RHS_mat = (Sc*invM)[1:xdim_adv, 1:xdim_adv]*(symm_DM_J1_upwind) + D_upwind
+        elseif fluxtype == "upwind_diss_symm"
+            if a>0
+                D_upwind = (Sc*invM*(-TranspV* (ex_B*V + ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2) + ex_DM ))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
+            else
+                D_upwind = epsilon^2*(Sc*invM*(-TranspV* (im_B*V + im_B_J0*V + im_B_J0E1*im_V_J0E1 + im_B_J0E2*im_V_J0E2) + im_DM))[Int(xrange/2)+1:xrange, 1:Int(xrange/2)]
+            end
+            RHS_mat = (Sc*invM)[1:xdim_adv, 1:xdim_adv]*(diss_DM_J1_central + 1/2*(diss_DM_J1_diss + diss_DM_J1_diss')) + D_upwind
+            #RHS_mat = (Sc*invM)[1:xdim_adv, 1:xdim_adv]*(diss_DM_J1_central + (diss_DM_J1_diss + diss_DM_J1_diss')) + D_upwind + (Sc*invM*(-TranspV* (ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2)))[1:Int(xrange/2), Int(xrange/2)+1:xrange]'
+            #RHS_mat = ((Sc*invM)[1:xdim_adv, 1:xdim_adv]*(diss_DM_J1_central + 1/2*(diss_DM_J1_diss + diss_DM_J1_diss')) + D_upwind
+            #            - 1/2*(Sc*invM*(-TranspV* (ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2)))[1:Int(xrange/2), Int(xrange/2)+1:xrange]
+            #            + 1/2*(Sc*invM*(-TranspV* (ex_B_J0*V + ex_B_J0E1*ex_V_J0E1 + ex_B_J0E2*ex_V_J0E2)))[1:Int(xrange/2), Int(xrange/2)+1:xrange]')
+        end
+        ex_RHS_mat = RHS_mat
+        im_RHS_mat = zeros(size(ex_RHS_mat))
     elseif eq_type == "heat"
         if fluxtype == "altlr"
             RHS_mat = DGsemidiscretization_DoD_heat(setup, deg, nodes, num_flux; T = T, do_stabilize = do_stabilize, c = c, fix_eta = fix_eta, ext_test_func = ext_test_func)[1]
@@ -482,6 +688,7 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
     splitRHS["im_DM"] = im_DM
     splitRHS["TranspV*ex_B*V"] = TranspV*ex_B*V
     splitRHS["TranspV*im_B*V"] = TranspV*im_B*V
+    splitRHS["ex_A"] = ex_A
 
     splitRHS["ex_V_J0E1"] = ex_V_J0E1
     splitRHS["ex_V_J0E2"] = ex_V_J0E2
@@ -504,6 +711,9 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
 
     splitRHS["FLUXTERMS"] = Sc*invM * (-TranspV* ((ex_B + im_B)*V + (ex_B_J0+im_B_J0)*V + ex_B_J0E1*ex_V_J0E1 + im_B_J0E1*im_V_J0E1 + ex_B_J0E2*ex_V_J0E2 + im_B_J0E2*im_V_J0E2))
     splitRHS["VOLTERMS"] = Sc*invM * ((ex_DM+im_DM) + (ex_DM_J1 + im_DM_J1)) -invM*(ex_sM + im_sM)
+    splitRHS["FLUXTERMS_DoD"] = Sc*invM * (-TranspV* ((ex_B_J0+im_B_J0)*V + ex_B_J0E1*ex_V_J0E1 + im_B_J0E1*im_V_J0E1 + ex_B_J0E2*ex_V_J0E2 + im_B_J0E2*im_V_J0E2))
+    splitRHS["VOLTERMS_DoD"] = Sc*invM * ((ex_DM_J1 + im_DM_J1))
+
     splitRHS["Mh"] = Mh
     # Constructing the initial conition (special case for j coordinate)
     u0_rho = [u0_eval(x) for x in x_d]
@@ -514,6 +724,9 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes, num_flux;
             u0 = [sin(x) for x in x_d]
         end
         M_global = M_global[1:Int(xrange/2), 1:Int(xrange/2)]
+    elseif eq_type == "transport"
+         u0 = u0_rho
+         M_global = M_global[1:Int(xrange/2), 1:Int(xrange/2)]
     else
         if eq_type == "telegraph"
             if init_cond == "telsin"
@@ -542,6 +755,7 @@ end
 function flux_terms_telegraph!(ex_B, im_B, setup, deg; fluxtype = "altlr")
     cellnumber = setup["cellnumber"]
     epsilon = setup["epsilon"]
+    eq_type = setup["eq_type"]
     eps2 = 1/(2*epsilon)
     epsq2 = 1/(2*epsilon^2)
     vshift = 2*cellnumber
@@ -643,7 +857,7 @@ function flux_terms_telegraph!(ex_B, im_B, setup, deg; fluxtype = "altlr")
                     im_B[2*cellnumber+vshift, 1+vshift] = -eps2
                 end
             end
-    elseif fluxtype == "altlr"
+    elseif fluxtype == "altlr" || eq_type == "transport"
         for i in 1:2*cellnumber
             # auf rho wirkende Terme
             if i <= cellnumber
@@ -699,6 +913,7 @@ function flux_terms_telegraph_DoD!(ex_B, im_B, setup, deg; fluxtype = "altlr")
     epsilon = setup["epsilon"]
     eps2 = 1/(2*epsilon)
     epsq2 = 1/(2*epsilon^2)
+    eq_type = setup["eq_type"]
     v = setup["v"]
     a = setup["a"]
     t_d = setup["t_d"]
@@ -719,7 +934,7 @@ function flux_terms_telegraph_DoD!(ex_B, im_B, setup, deg; fluxtype = "altlr")
             else
                 eta = 1-minimum([(v[i+1]-v[i])/h*1/c, 1.0])
             end
-            if fluxtype == "altlr"
+            if fluxtype == "altlr" || eq_type == "transport"
             # auf rho wirkende Terme (Stabilisert auf basis von outflow Term pink)
                 ex_B_J0[2*i, 2*i + vshift] = -1 * eta
                 ex_B_J0[2*i + 1, 2*i + vshift] = 1 * eta

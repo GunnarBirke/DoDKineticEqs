@@ -13,12 +13,12 @@ CFL = epsilon*0.5/N
 #CFL = 0.25/N
 TMM = ImExEuler # Just for IMEX extern solver needed
 problem = setup_problem_eq("sin", 0,1, N, Tmax = Tmax, a = 1.0, CFL = CFL, bcs = "periodic", epsilon = epsilon);
-#=
+#
 problem = include_cut_cell(problem, 0.001, 3);
 problem = include_cut_cell(problem, 0.1, 7);
 problem = include_cut_cell(problem, 0.0000001, 10);
 problem = include_cut_cell(problem, 0.3, 14);
-=#
+#
 
 #### discretize in space
 RHS_mat, problem, splitRHS = DGsemidiscretization_DoD_telegraph(problem, deg, GaussLegendre, "Upwind",  do_stabilize = true, fix_eta = true, c = 0.1, fluxtype = "altlr", include_b_h = true, eq_type = "wave");

@@ -260,7 +260,7 @@ function ARS3(setup, RHS_mat)
     return u_sol, u_exact
 end
 
-function ImEx(setup, RHS_mat, Tableau)
+function ImEx(setup, RHS_mat, Tableau; only_explicit = false)
     # matrices
     A_ex = Tableau["A_ex"]
     A_im = Tableau["A_im"]
@@ -286,7 +286,7 @@ function ImEx(setup, RHS_mat, Tableau)
     #u_exact = 0
     Nt = length(t_d)
     u_sol = zeros(dim, Nt)
-    if eq_type == "telegraph"
+    if (eq_type == "telegraph" || eq_type == "wave") && only_explicit == false
         # Pseudo-ImEx specialisation
         u_sol_rho = zeros(compdim, Nt)
         u_sol_j = zeros(compdim, Nt)
@@ -329,7 +329,7 @@ function ImEx(setup, RHS_mat, Tableau)
             end
             u_sol[:, it] = vcat(u_sol_rho[:, it], u_sol_j[:, it])
         end
-    elseif eq_type == "heat"
+    elseif eq_type == "heat" || only_explicit == true
         for it in range(1,Nt, step = 1)
             if it == 1
                 u_sol[:, it] = u0[:, it]
@@ -461,6 +461,32 @@ function get_RK_tableau(tableau_string)
 end
 
 
+function Heun(setup, RHS_mat)
+    x_d = setup["x_d"]
+    a = setup["a"]
+    u0 = setup["u0"]
+    t_d = setup["t_d"]
+    eq_type = setup["eq_type"]
+    u_exact = get_exact_solution(setup)
+    Nt = length(t_d)
+    Nx = length(u0)
+    u_sol = zeros(Nx, Nt)
+    substeps = zeros(Nx, 2)
+    f(u,t) = f_RHS(u,t, RHS_mat, setup)
+    cRK = [0, 1]
+    for it in range(1,Nt, step = 1)
+        if it == 1
+            u_sol[:,it] = u0[1:Nx]
+        else
+            dt = (t_d[it]-t_d[it-1])
+            substeps[:, 1] = f(u_sol[:,it - 1],t_d[it - 1] + cRK[1]*dt)
+            substeps[:, 2] = f(u_sol[:,it - 1] + dt * (substeps[:, 1]), t_d[it - 1] + cRK[2]*dt)
+            u_sol[:,it] = u_sol[:,it - 1] + dt * (1/2*substeps[:, 1] + 1/2*substeps[:, 2])
+        end
+    end
+    return u_sol, u_exact
+end
+
 
 function SSPRK3(setup, RHS_mat)
     x_d = setup["x_d"]
@@ -470,8 +496,7 @@ function SSPRK3(setup, RHS_mat)
     u_exact = get_exact_solution(setup)
     #u_exact = 0
     Nt = length(t_d)
-    # Nx = length(x_d)*2, because wave/telegraph is a 2-dim system of equations
-    Nx = length(x_d)*2
+    Nx = length(u0)
     u_sol = zeros(Nx, Nt)
     substeps = zeros(Nx, 3)
     f(u,t) = f_RHS(u,t, RHS_mat, setup)
@@ -498,7 +523,7 @@ function SSPRK10_4(setup, RHS_mat)
     u_exact = get_exact_solution(setup)
     #u_exact = 0
     Nt = length(t_d)
-    Nx = length(x_d)*2
+    Nx = length(u0)
     u_sol = zeros(Nx, Nt)
     substeps = zeros(Nx, 10)
     f(u,t) = f_RHS(u,t, RHS_mat, setup)

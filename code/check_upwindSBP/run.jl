@@ -1,7 +1,7 @@
 include("upwindSPB_test.jl")
 
 IBP, sym, eigenvalues, problem, splitRHS = upwindSBP_test( N = 2^3, 
-                                        deg = 1, 
+                                        deg = 3, 
                                         epsilon = 0.5, 
                                         basis = GaussLegendre, 
                                         c = 0.4,
@@ -14,8 +14,8 @@ IBP, sym, eigenvalues, problem, splitRHS = upwindSBP_test( N = 2^3,
 #display(splitRHS["Mh"]*splitRHS["Dplus"])
 #display(splitRHS["Dminus"]*splitRHS["Mh"])
 
-display(round.(IBP, digits = 14));
-eigvals(IBP+IBP')
+#display(round.(IBP, digits = 14));
+#eigvals(IBP+IBP')
 
 # check, how the single operators evolve to the result
 #=
@@ -55,6 +55,15 @@ for i in 1:dim_s
 end
 #display(IBP_sumrow)
 =#
+
+# further checks
+#=
 norm_mat = splitRHS["Mh"]*splitRHS["Dminus"]
 
 eigvals(norm_mat + norm_mat');
+
+
+central = 1/2*(splitRHS["Dplus"]+splitRHS["Dminus"])
+display(splitRHS["Mh"]*central + central'*splitRHS["Mh"])
+display(splitRHS["Mh"]*central + central'*splitRHS["Mh"] + (splitRHS["Mh"]*central + central'*splitRHS["Mh"])')
+=#
