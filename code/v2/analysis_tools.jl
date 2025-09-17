@@ -77,6 +77,7 @@ end
 ###############################        Konvergenztest        ################################
 #############################################################################################
 function convergence_test(;
+    T = Float64,
     eq_type = "telegraph", epsilon = 0.5, a = 1,
     exprange = [3,8], Tmax = 3.0, deg = 1, CFL_prefac = 0.5, basis_type = GaussLegendre,
     fluxtype = "altlr", J1_type = "upwind_diss_symm", J1_type_A = "upwind_diss_symm",
@@ -88,16 +89,21 @@ function convergence_test(;
 
     n_comp = get_n_comp(eq_type)
     steps = 2 .^range(exprange[1],exprange[2])
-    errors = zeros(length(steps), n_comp)
+    errors = zeros(T, length(steps), n_comp)
+    solution_output = Matrix{T}
     for (istep, step) in enumerate(steps)
-        CFL = CFL_prefac*epsilon/(2*deg+1)/(N^deriv_fac) # one factor of 1/N gets included in setup_problem_eq 
+        if !(eq_type == "heat")
+            CFL = CFL_prefac*epsilon/(2*deg+1) # one factor of 1/N gets included in setup_problem_eq -> this is dt~epsilon/dx
+        else
+            CFL = CFL_prefac/(2*deg+1)/(step)  # one factor of 1/N gets included in setup_problem_eq -> this is dt~1/dx^2
+        end
         problem = setup_problem_eq(id_set[1], id_set[2], id_set[3], id_set[4], step, Tmax = Tmax, a = a, CFL = CFL, bcs = "periodic", epsilon = epsilon);
-        cut_cells = take_care_of_cut_cells(N, cut_cells)
+        cut_cells = take_care_of_cut_cells(step, cut_cells)
         for (i_cc, cut_cell) in enumerate(cut_cells)
             problem = include_cut_cell(problem, cut_cell, 3*i_cc)
         end
 
-        RHS_mat, problem, SBP_storage = DGsemidiscretization_DoD_telegraph(problem, deg, basis_type,  do_stabilize = true, fix_eta = fix_eta,
+        RHS_mat, problem, SBP_storage = DGsemidiscretization_DoD_telegraph(problem, deg, basis_type, T = T, do_stabilize = true, fix_eta = fix_eta,
                                                                     c = c, fluxtype = fluxtype, include_b_h = include_b_h, ext_test_func = true,
                                                                     J1_type = J1_type, J1_type_A = J1_type_A);
 
@@ -127,8 +133,18 @@ function convergence_test(;
             end
             errors[istep, comp] = sqrt(errors[istep, comp])
         end
+        if istep == length(steps)
+            solution_output = zeros(T, length(sol[:, end]), 4)
+            if eq_type in ["transport", "heat"]
+                solution_output[:, 1] = x_d
+            else 
+                solution_output[:, 1] = vcat(x_d, x_d)
+            end
+            solution_output[:, 2] = sol[:, end]
+            solution_output[:, 3] = u_exact[:, end]
+        end
     end
-    return steps, errors
+    return steps, errors, solution_output
 end
 
 
@@ -139,11 +155,12 @@ end
 
 
 function calc_op_norm(setup, RHS_mat)
+    T = setup["T"]
     x_d = setup["x_d"]
     M_global = setup["M"]
     dim_M = length(M_global[1,:])
     sqrtM = sqrt.(M_global)
-    invsqrtM = zeros(dim_M, dim_M)
+    invsqrtM = zeros(T, dim_M, dim_M)
     for ism in 1:dim_M
         for jsm in 1:dim_M
             if M_global[ism,jsm] != 0
@@ -156,6 +173,7 @@ end
 
 
 function op_norm_vs_cut_fac(;
+    T = Float64,
     eq_type = "telegraph", epsilon = 0.5, a = 1,
     N = 2^4, Tmax = 3.0, deg = 1, CFL_prefac = 0.5, basis_type = GaussLegendre,
     fluxtype = "altlr", J1_type = "upwind_diss_symm", J1_type_A = "upwind_diss_symm",
@@ -165,7 +183,7 @@ function op_norm_vs_cut_fac(;
     id_set = construct_id_set_for_analysis(eq_type)
     n_comp = get_n_comp(eq_type)
     cut_cell_factors = range(0.01, 0.49, length = cut_cell_refinement)
-    opnorms = zeros(length(cut_cell_factors))
+    opnorms = zeros(T, length(cut_cell_factors))
     CFL = 1 # cfl irrelevant here, but needs to be defined
     for (ialpha,alpha) in enumerate(cut_cell_factors)
         problem = setup_problem_eq(id_set[1], id_set[2], id_set[3], id_set[4], N, Tmax = Tmax, a = a, CFL = CFL, bcs = "periodic", epsilon = epsilon);
@@ -174,7 +192,7 @@ function op_norm_vs_cut_fac(;
                 problem = include_cut_cell(problem, alpha, 3*i)
             end
         end
-        RHS_mat, problem, SBP_storage = DGsemidiscretization_DoD_telegraph(problem, deg, basis_type,  do_stabilize = do_stabilize, fix_eta = fix_eta,
+        RHS_mat, problem, SBP_storage = DGsemidiscretization_DoD_telegraph(problem, deg, basis_type, T = T, do_stabilize = do_stabilize, fix_eta = fix_eta,
                                                                     c = c, fluxtype = fluxtype, include_b_h = include_b_h, ext_test_func = true,
                                                                     J1_type = J1_type, J1_type_A = J1_type_A);
         opnorms[ialpha] = calc_op_norm(problem, RHS_mat)
@@ -183,6 +201,7 @@ function op_norm_vs_cut_fac(;
 end
 
 function minimize_operatornorm(;
+                            T = Float64,
                             eq_type = "telegraph", epsilon = 0.5, a = 1,
                             N = 2^4, deg = 1, basis_type = GaussLegendre,
                             fluxtype = "altlr", J1_type = "upwind_diss_symm", J1_type_A = "upwind_diss_symm",
@@ -197,17 +216,17 @@ function minimize_operatornorm(;
     # initializing
     best_norm = 0
     best_c = 0
-    new_cs = zeros(25)
+    new_cs = zeros(T, 25)
     ######################
     #first step
     ######################
     cs = range(0.01, 1, length = 51) 
-    norm_matrix_vs_c = zeros(cut_cell_refinement, length(cs))
+    norm_matrix_vs_c = zeros(T, cut_cell_refinement, length(cs))
     # calculate all operatornorms
     if verbose == true
         println("Time for first 100 evaluations:")
         @time for (ic, c) in enumerate(cs)
-            norm_matrix_vs_c[:, ic] = op_norm_vs_cut_fac(;  eq_type = eq_type, epsilon = epsilon, a = a,
+            norm_matrix_vs_c[:, ic] = op_norm_vs_cut_fac(;  T = T, eq_type = eq_type, epsilon = epsilon, a = a,
                                                             N = N, deg = deg, CFL_prefac = CFL_prefac, basis_type = basis_type,
                                                             fluxtype = fluxtype, J1_type = J1_type, J1_type_A = J1_type_A,
                                                             cut_cell_refinement = cut_cell_refinement, fix_eta = fix_eta, c = c, include_b_h = include_b_h,
@@ -216,7 +235,7 @@ function minimize_operatornorm(;
         end
     else
         for (ic, c) in enumerate(cs)
-            norm_matrix_vs_c[:, ic] = op_norm_vs_cut_fac(;  eq_type = eq_type, epsilon = epsilon, a = a,
+            norm_matrix_vs_c[:, ic] = op_norm_vs_cut_fac(;  T = T, eq_type = eq_type, epsilon = epsilon, a = a,
                                                             N = N, deg = deg, CFL_prefac = CFL_prefac, basis_type = basis_type,
                                                             fluxtype = fluxtype, J1_type = J1_type, J1_type_A = J1_type_A,
                                                             cut_cell_refinement = cut_cell_refinement, fix_eta = fix_eta, c = c, include_b_h = include_b_h,
@@ -235,20 +254,20 @@ function minimize_operatornorm(;
     ######################
     for exp in [-2, -3, -4]
         new_cs = range(best_c - 10.0^exp, best_c + 10.0^exp, length = 25)
-        norm_matrix_vs_c = zeros(cut_cell_refinement, length(new_cs))
+        norm_matrix_vs_c = zeros(T, cut_cell_refinement, length(new_cs))
         if verbose == true
             println("Time for step $(-exp):")
             @time for (ic, c) in enumerate(new_cs)
-                norm_matrix_vs_c[:, ic] = op_norm_vs_cut_fac(;  eq_type = eq_type, epsilon = epsilon, a = a,
-                                                            N = N, deg = deg, CFL_prefac = CFL_prefac, basis_type = basis_type,
-                                                            fluxtype = fluxtype, J1_type = J1_type, J1_type_A = J1_type_A,
-                                                            cut_cell_refinement = cut_cell_refinement, fix_eta = fix_eta, c = c, include_b_h = include_b_h,
-                                                            include_cut_cells = true, do_stabilize = true,
-                                                            )[2]
+                norm_matrix_vs_c[:, ic] = op_norm_vs_cut_fac(;  T = T, eq_type = eq_type, epsilon = epsilon, a = a,
+                                                                N = N, deg = deg, CFL_prefac = CFL_prefac, basis_type = basis_type,
+                                                                fluxtype = fluxtype, J1_type = J1_type, J1_type_A = J1_type_A,
+                                                                cut_cell_refinement = cut_cell_refinement, fix_eta = fix_eta, c = c, include_b_h = include_b_h,
+                                                                include_cut_cells = true, do_stabilize = true,
+                                                                )[2]
             end
         else
             for (ic, c) in enumerate(new_cs)
-            norm_matrix_vs_c[:, ic] = op_norm_vs_cut_fac(;  eq_type = eq_type, epsilon = epsilon, a = a,
+            norm_matrix_vs_c[:, ic] = op_norm_vs_cut_fac(;  T = T, eq_type = eq_type, epsilon = epsilon, a = a,
                                                             N = N, deg = deg, CFL_prefac = CFL_prefac, basis_type = basis_type,
                                                             fluxtype = fluxtype, J1_type = J1_type, J1_type_A = J1_type_A,
                                                             cut_cell_refinement = cut_cell_refinement, fix_eta = fix_eta, c = c, include_b_h = include_b_h,
@@ -276,6 +295,7 @@ end
 # - eps
 
 function asymptotic_error(;
+    T = Float64,
     epsilon_refinement = 30, a = 1,
     N = 2^5, Tmax = 3.0, deg = 1, CFL_prefac = 0.5, basis_type = GaussLegendre,
     fluxtype = "altlr", J1_type = "upwind_diss_symm", J1_type_A = "upwind_diss_symm",
@@ -284,9 +304,9 @@ function asymptotic_error(;
     CFL_type = "eps/dx^2",
                         )
     epsilons = (1/2) .^(1:epsilon_refinement)
-    errors = zeros(epsilon_refinement)
-    sol_telegraph = Vector{Matrix{Float64}}()
-    sol_heat = Vector{Matrix{Float64}}()
+    errors = zeros(T, epsilon_refinement)
+    sol_telegraph = Vector{Matrix{T}}()
+    sol_heat = Vector{Matrix{T}}()
     for (ieps, eps) in enumerate(epsilons)
         if CFL_type == "eps/dx^2"
             CFL = CFL_prefac*eps/(2*deg+1)/N
@@ -302,7 +322,7 @@ function asymptotic_error(;
             problem = include_cut_cell(problem, cut_cell, 3*i_cc)
         end
 
-        RHS_mat, problem, SBP_storage = DGsemidiscretization_DoD_telegraph(problem, deg, basis_type,  do_stabilize = true, fix_eta = fix_eta,
+        RHS_mat, problem, SBP_storage = DGsemidiscretization_DoD_telegraph(problem, deg, basis_type, T = T, do_stabilize = true, fix_eta = fix_eta,
                                                                     c = c, fluxtype = fluxtype, include_b_h = include_b_h, ext_test_func = true,
                                                                     J1_type = J1_type, J1_type_A = J1_type_A);
 
@@ -320,7 +340,7 @@ function asymptotic_error(;
             problem = include_cut_cell(problem, cut_cell, 3*i_cc)
         end
 
-        RHS_mat, problem, SBP_storage = DGsemidiscretization_DoD_telegraph(problem, deg, basis_type,  do_stabilize = true, fix_eta = fix_eta,
+        RHS_mat, problem, SBP_storage = DGsemidiscretization_DoD_telegraph(problem, deg, basis_type, T = T, do_stabilize = true, fix_eta = fix_eta,
                                                                     c = c, fluxtype = fluxtype, include_b_h = include_b_h, ext_test_func = true,
                                                                     J1_type = J1_type, J1_type_A = J1_type_A);
 

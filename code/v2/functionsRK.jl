@@ -272,8 +272,13 @@ function ImEx(setup, RHS_mat, Tableau; only_explicit = false)
     ex_RHS_mat = setup["ex_RHS_mat"]
     im_RHS_mat = setup["im_RHS_mat"]
     # Instead of Nx, use the following notation (where dim = Nx for system, compdim = Nx for scalar equations)
-    dim = size(ex_RHS_mat/2)[1]
-    compdim = Int(dim/2)
+        if setup["eq_type"] in ["heat", "transport"]
+            dim = size(ex_RHS_mat/2)[1]
+            compdim = Int(dim)
+        else
+            dim = size(ex_RHS_mat/2)[1]
+            compdim = Int(dim/2)
+        end
     # Checking, if the splitting is possible
     im_RHS_mat[1:compdim, :] == zeros(compdim, dim) || throw(ArgumentError("pseudo-ImEx splitting not possible: implicit component has unexpected entrys "))
     # General Initialisation
