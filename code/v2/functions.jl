@@ -306,19 +306,21 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes;
             SBP_storage["Dminus"] = Dminus
             SBP_storage["Dplus"] = Dplus
             if fluxtype == "altlr"
-                RHS_mat[1:comprange, comprange + 1:2*comprange] = -Dminus
-                RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*Dplus
+                ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -Dminus
+                im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*Dplus
             elseif fluxtype == "altrl"
-                RHS_mat[1:comprange, comprange + 1:2*comprange] = -Dplus
-                RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*Dminus
+                ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -Dplus
+                im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*Dminus
             end
         elseif fluxtype == "central"
             D_central = get_D_central(setup)
             SBP_storage["Dc"] = D_central
-            RHS_mat[1:comprange, comprange + 1:2*comprange] = -D_central
-            RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*D_central
+            ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -D_central
+            im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*D_central
         end
-        RHS_mat = invM_global*RHS_mat
+        ex_RHS_mat = invM_global*ex_RHS_mat
+        im_RHS_mat = invM_global*im_RHS_mat
+        RHS_mat = ex_RHS_mat + im_RHS_mat
     elseif eq_type == "wave_symm"
         if fluxtype in ["altlr", "altrl"]
             Dminus = get_Dminus(setup, for_bh = false)
@@ -326,19 +328,21 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes;
             SBP_storage["Dminus"] = Dminus
             SBP_storage["Dplus"] = Dplus
             if fluxtype == "altlr"
-                RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*Dminus
-                RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*Dplus
+                ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*Dminus
+                im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*Dplus
             elseif fluxtype == "altrl"
-                RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*Dplus
-                RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*Dminus
+                ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*Dplus
+                im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*Dminus
             end
         elseif fluxtype == "central"
             D_central = get_D_central(setup)
             SBP_storage["Dc"] = D_central
-            RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*D_central
-            RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*D_central
+            ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*D_central
+            im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*D_central
         end
-        RHS_mat = invM_global*RHS_mat
+        ex_RHS_mat = invM_global*ex_RHS_mat
+        im_RHS_mat = invM_global*im_RHS_mat
+        RHS_mat = ex_RHS_mat + im_RHS_mat
     elseif eq_type in ["telegraph", "telegraph_symm"]
         Dminus_A = get_Dminus(setup, for_bh = true)
         Dplus_A = get_Dplus(setup, for_bh = true)
@@ -354,23 +358,27 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes;
                 SBP_storage["Dminus"] = Dminus
                 SBP_storage["Dplus"] = Dplus
                 if fluxtype == "altlr"
-                    RHS_mat[1:comprange, comprange + 1:2*comprange] = -Dminus
-                    RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*Dplus
-                    RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A -1/epsilon^2*M_source
+                    ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -Dminus
+                    im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*Dplus
+                    ex_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A
+                    im_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = -1/epsilon^2*M_source
                 elseif fluxtype == "altrl"
-                    RHS_mat[1:comprange, comprange + 1:2*comprange] = -Dplus
-                    RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*Dminus
-                    RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A
-                    RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A -1/epsilon^2*M_source
+                    ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -Dplus
+                    im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*Dminus
+                    ex_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A
+                    im_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = -1/epsilon^2*M_source
                 end
             elseif fluxtype == "central"
                 D_central = get_D_central(setup)
                 SBP_storage["Dc"] = D_central
-                RHS_mat[1:comprange, comprange + 1:2*comprange] = -D_central
-                RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*D_central
-                RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A -1/epsilon^2*M_source
+                ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -D_central
+                im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon^2*D_central
+                ex_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A
+                im_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = -1/epsilon^2*M_source
             end
-            RHS_mat = invM_global*RHS_mat
+            ex_RHS_mat = invM_global*ex_RHS_mat
+            im_RHS_mat = invM_global*im_RHS_mat
+            RHS_mat = ex_RHS_mat + im_RHS_mat
         elseif eq_type == "telegraph_symm"
             if fluxtype in ["altlr", "altrl"]
                 Dminus = get_Dminus(setup, for_bh = false)
@@ -378,22 +386,27 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes;
                 SBP_storage["Dminus"] = Dminus
                 SBP_storage["Dplus"] = Dplus
                 if fluxtype == "altlr"
-                    RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*Dminus
-                    RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*Dplus
-                    RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A -1/epsilon^2*M_source
+                    ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*Dminus
+                    im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*Dplus
+                    ex_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A
+                    im_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = -1/epsilon^2*M_source
                 elseif fluxtype == "altrl"
-                    RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*Dplus
-                    RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*Dminus
-                    RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A -1/epsilon^2*M_source
+                    ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*Dplus
+                    im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*Dminus
+                    ex_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A
+                    im_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = -1/epsilon^2*M_source
                 end
             elseif fluxtype == "central"
                 D_central = get_D_central(setup)
                 SBP_storage["Dc"] = D_central
-                RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*D_central
-                RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*D_central
-                RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A -1/epsilon^2*M_source
+                ex_RHS_mat[1:comprange, comprange + 1:2*comprange] = -1/epsilon*D_central
+                im_RHS_mat[comprange + 1:2*comprange, 1:comprange] = -1/epsilon*D_central
+                ex_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = 1/epsilon*A
+                im_RHS_mat[comprange + 1:2*comprange, comprange + 1:2*comprange] = -1/epsilon^2*M_source
             end
-            RHS_mat = invM_global*RHS_mat
+            ex_RHS_mat = invM_global*ex_RHS_mat
+            im_RHS_mat = invM_global*im_RHS_mat
+            RHS_mat = ex_RHS_mat + im_RHS_mat
         end
     elseif eq_type == "heat"
         if fluxtype in ["altlr", "altrl"]
@@ -412,6 +425,9 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes;
             RHS_mat = invM_global * D_central * invM_global * D_central
         end
     end
+
+    setup["ex_RHS_mat"] = ex_RHS_mat
+    setup["im_RHS_mat"] = im_RHS_mat
 
     # Constructing the initial conition (special case for j coordinate)
     u0_rho = [u0_eval(x) for x in x_d]
@@ -452,6 +468,6 @@ function DGsemidiscretization_DoD_telegraph(setup, deg, nodes;
     #display((-TranspV* (B*V + B2*V2))[1:9, 1:9])
     #display(DM_J1[1:10, 1:10])
 
-    return RHS_mat, setup, splitRHS, SBP_storage
+    return RHS_mat, setup, SBP_storage
 end
 
