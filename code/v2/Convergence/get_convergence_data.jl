@@ -1,4 +1,4 @@
-using LinearAlgebra, Plots, PolynomialBases, OrdinaryDiffEq, PrettyTables, DelimitedFiles
+using LinearAlgebra, Plots, PolynomialBases, OrdinaryDiffEq, DelimitedFiles
 include("../functions.jl")
 include("../vizualize.jl")
 include("../functionsRK.jl")
