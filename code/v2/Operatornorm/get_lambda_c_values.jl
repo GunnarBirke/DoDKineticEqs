@@ -28,7 +28,7 @@ for eq_type in ["telegraph", "heat"]
     for basis_type in [GaussLegendre, LobattoLegendre]
         for (fluxtype, J1_type) in flux_tuple
             output_matrix = zeros((deg_max+1), 4)
-            mkpath("./optimal_lambda_c_values/lambda_c_value_results/" * eq_type * "/$(basis_type)/" * J1_type)
+            mkpath(joinpath(@__DIR__,"./optimal_lambda_c_values/lambda_c_value_results/" * eq_type * "/$(basis_type)/" * J1_type))
             for (ieps, epsilon) in enumerate(epsilons)
                 println("Start: " * eq_type * "/$(basis_type)/" * J1_type * "/epsilon=$(epsilon)")
                 for (ideg, deg) in enumerate(0:deg_max)
