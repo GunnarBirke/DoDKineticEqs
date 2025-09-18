@@ -89,13 +89,22 @@ function convergence_test(;
 
     n_comp = get_n_comp(eq_type)
     steps = 2 .^range(exprange[1],exprange[2])
-    errors = zeros(T, length(steps), n_comp)
+    errors = zeros(T, length(steps)*n_comp)
     solution_output = Matrix{T}
     for (istep, step) in enumerate(steps)
         if !(eq_type == "heat")
             CFL = CFL_prefac*epsilon/(2*deg+1) # one factor of 1/N gets included in setup_problem_eq -> this is dt~epsilon/dx
         else
-            CFL = CFL_prefac/(2*deg+1)/(step)  # one factor of 1/N gets included in setup_problem_eq -> this is dt~1/dx^2
+            # refined deg == 2 case to reduce the CFL that strong just in the required cases. Experimentally obtained.
+            if deg == 2
+                if basis_type == GaussLegendre
+                    CFL = CFL_prefac/(2*deg+1)/(step) * 0.25
+                elseif basis_type == LobattoLegendre
+                    CFL = CFL_prefac/(2*deg+1)/(step) * 0.5
+                end
+            else
+                CFL = CFL_prefac/(2*deg+1)/(step)  # one factor of 1/N gets included in setup_problem_eq -> this is dt~1/dx^2
+            end
         end
         problem = setup_problem_eq(id_set[1], id_set[2], id_set[3], id_set[4], step, Tmax = Tmax, a = a, CFL = CFL, bcs = "periodic", epsilon = epsilon);
         cut_cells = take_care_of_cut_cells(step, cut_cells)
@@ -121,7 +130,7 @@ function convergence_test(;
         nodes = problem["nodes"]
         comprange = problem["comprange"]
         for comp in 1:n_comp
-            errors[istep, comp] = 0
+            errors[istep + (comp-1)*length(steps)] = 0
             for i in 1:problem["cellnumber"]
                 basis1 = nodes(deg)
                 for j in 1:deg+1
@@ -129,9 +138,9 @@ function convergence_test(;
                     basis1.nodes[j] = x_d[(deg+1)*(i-1) + j] 
                 end
                 value_range = (deg+1)*(i-1)+1 + (comp-1)*comprange:(deg+1)*i + (comp-1)*comprange
-                errors[istep, comp] += integrate((sol[value_range, end] - u_exact[value_range, end]).^2, basis1.weights.*(v[i+1]-v[i])/2)
+                errors[istep + (comp-1)*length(steps)] += integrate((sol[value_range, end] - u_exact[value_range, end]).^2, basis1.weights.*(v[i+1]-v[i])/2)
             end
-            errors[istep, comp] = sqrt(errors[istep, comp])
+            errors[istep + (comp-1)*length(steps)] = sqrt(errors[istep + (comp-1)*length(steps)])
         end
         if istep == length(steps)
             solution_output = zeros(T, length(sol[:, end]), 4)
@@ -139,6 +148,7 @@ function convergence_test(;
                 solution_output[:, 1] = x_d
             else 
                 solution_output[:, 1] = vcat(x_d, x_d)
+                steps = vcat(steps, steps)
             end
             solution_output[:, 2] = sol[:, end]
             solution_output[:, 3] = u_exact[:, end]
