@@ -9,10 +9,10 @@ include("../analysis_tools.jl")
 
 
 cut_cells = [0.49, 0.3, 0.1, 10^-2, 10^-7]
-epsilons = [0.5, 0.25, 0.1, 0.01, 0.001]
+epsilons = [0.5, 0.25, 0.1, 0.01]
 a = 1
 T = Float64
-exprange = [4,7]
+exprange = [4,8]
 Tmax = 1.0
 CFL_prefac = [0.5, 0.3, 0.15]
 flux_tuple = [("altlr", "upwind_diss_symm", "upwind_diss_symm"),
